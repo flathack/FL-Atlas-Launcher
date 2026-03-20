@@ -1,0 +1,75 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="54" y1="44" x2="448" y2="468" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#09111F"/>
+      <stop offset="1" stop-color="#153E75"/>
+    </linearGradient>
+    <radialGradient id="nebula" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(364 118) rotate(135) scale(176 138)">
+      <stop stop-color="#67E8F9" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#67E8F9" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="112" y1="110" x2="398" y2="402" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5EEAD4"/>
+      <stop offset="1" stop-color="#60A5FA"/>
+    </linearGradient>
+    <linearGradient id="hull" x1="179" y1="120" x2="333" y2="352" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8FAFC"/>
+      <stop offset="0.52" stop-color="#B8C5D8"/>
+      <stop offset="1" stop-color="#73849A"/>
+    </linearGradient>
+    <linearGradient id="armor" x1="196" y1="152" x2="307" y2="304" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#CFD9E7"/>
+      <stop offset="1" stop-color="#64748B"/>
+    </linearGradient>
+    <linearGradient id="cockpit" x1="256" y1="154" x2="256" y2="224" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#A5F3FC"/>
+      <stop offset="1" stop-color="#2563EB"/>
+    </linearGradient>
+    <linearGradient id="engine" x1="256" y1="304" x2="256" y2="406" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FDE68A"/>
+      <stop offset="0.48" stop-color="#F97316"/>
+      <stop offset="1" stop-color="#7C2D12"/>
+    </linearGradient>
+    <filter id="glow" x="80" y="79" width="352" height="354" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape"/>
+      <feGaussianBlur stdDeviation="10" result="effect1_foregroundBlur"/>
+    </filter>
+  </defs>
+
+  <rect x="32" y="32" width="448" height="448" rx="112" fill="url(#bg)"/>
+  <rect x="32" y="32" width="448" height="448" rx="112" fill="url(#nebula)"/>
+
+  <circle cx="122" cy="134" r="3.5" fill="#DCE7F8" fill-opacity="0.85"/>
+  <circle cx="374" cy="104" r="4.5" fill="#DCE7F8" fill-opacity="0.75"/>
+  <circle cx="408" cy="178" r="2.5" fill="#DCE7F8" fill-opacity="0.85"/>
+  <circle cx="148" cy="362" r="2.5" fill="#DCE7F8" fill-opacity="0.7"/>
+  <circle cx="354" cy="386" r="3.5" fill="#DCE7F8" fill-opacity="0.82"/>
+
+  <g opacity="0.85" filter="url(#glow)">
+    <path d="M116 326C156 365 206 386 256 386C317 386 370 354 404 308" stroke="url(#ring)" stroke-width="18" stroke-linecap="round"/>
+  </g>
+
+  <path d="M188 330L165 289L212 274L230 316L188 330Z" fill="#556579"/>
+  <path d="M324 330L347 289L300 274L282 316L324 330Z" fill="#556579"/>
+
+  <path d="M256 106L288 138L309 214L336 286L304 334L280 322L256 286L232 322L208 334L176 286L203 214L224 138L256 106Z" fill="url(#hull)"/>
+  <path d="M256 130L279 153L294 212L313 267L292 301L256 275L220 301L199 267L218 212L233 153L256 130Z" fill="url(#armor)"/>
+
+  <path d="M224 184L256 154L288 184L276 230H236L224 184Z" fill="url(#cockpit)"/>
+  <path d="M233 145L256 118L279 145L270 170H242L233 145Z" fill="#E2E8F0" fill-opacity="0.85"/>
+
+  <path d="M176 286L128 300L176 246L212 242L176 286Z" fill="#6B7C91"/>
+  <path d="M336 286L384 300L336 246L300 242L336 286Z" fill="#6B7C91"/>
+  <path d="M167 298L116 326L154 274L181 268L167 298Z" fill="#445469"/>
+  <path d="M345 298L396 326L358 274L331 268L345 298Z" fill="#445469"/>
+
+  <path d="M238 318L256 290L274 318L265 350H247L238 318Z" fill="#556579"/>
+  <path d="M228 340C236 364 246 382 256 394C266 382 276 364 284 340H228Z" fill="url(#engine)"/>
+  <path d="M238 344C243 358 249 370 256 379C263 370 269 358 274 344H238Z" fill="#FEF3C7"/>
+
+  <path d="M202 212H310" stroke="#F8FAFC" stroke-opacity="0.35" stroke-width="6" stroke-linecap="round"/>
+  <path d="M220 248H292" stroke="#F8FAFC" stroke-opacity="0.22" stroke-width="5" stroke-linecap="round"/>
+  <path d="M225 321L198 340" stroke="#CBD5E1" stroke-opacity="0.35" stroke-width="5" stroke-linecap="round"/>
+  <path d="M287 321L314 340" stroke="#CBD5E1" stroke-opacity="0.35" stroke-width="5" stroke-linecap="round"/>
+</svg>
