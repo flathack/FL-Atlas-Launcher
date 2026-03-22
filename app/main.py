@@ -13,14 +13,15 @@ else:
     from .services.config_service import ConfigService
     from .ui.main_window import MainWindow
 
+APP_VERSION = "v0.1.0"
+
 
 def main() -> int:
     app = create_application()
     config_service = ConfigService()
-    window = MainWindow(config_service=config_service)
+    window = MainWindow(config_service=config_service, app_version=APP_VERSION)
     window.show()
     return app.exec()
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

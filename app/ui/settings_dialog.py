@@ -22,14 +22,21 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.i18n import Translator
 from app.models.installation import Installation
 from app.services.ini_service import IniService
 
 
 class SettingsDialog(QDialog):
-    def __init__(self, installations: list[Installation], parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        installations: list[Installation],
+        translator: Translator,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Installationen verwalten")
+        self.translator = translator
+        self.setWindowTitle(self.tr("settings_title"))
         self.resize(760, 420)
 
         self._installations = deepcopy(installations)
@@ -44,10 +51,10 @@ class SettingsDialog(QDialog):
         self.perf_path_edit = QLineEdit()
         self.perf_path_edit.setPlaceholderText(str(self.ini_service.default_perf_options_path()))
 
-        self.new_button = QPushButton("Neu")
-        self.delete_button = QPushButton("Loeschen")
-        self.browse_exe_button = QPushButton("EXE waehlen")
-        self.browse_perf_button = QPushButton("PerfOptions.ini waehlen")
+        self.new_button = QPushButton(self.tr("new"))
+        self.delete_button = QPushButton(self.tr("delete"))
+        self.browse_exe_button = QPushButton(self.tr("choose_exe"))
+        self.browse_perf_button = QPushButton(self.tr("choose_perf"))
 
         self.button_box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
@@ -61,10 +68,13 @@ class SettingsDialog(QDialog):
     def installations(self) -> list[Installation]:
         return self._installations
 
+    def tr(self, key: str, **kwargs: object) -> str:
+        return self.translator.text(key, **kwargs)
+
     def _build_ui(self) -> None:
         list_column = QWidget()
         list_layout = QVBoxLayout(list_column)
-        list_layout.addWidget(QLabel("Freelancer-Installationen"))
+        list_layout.addWidget(QLabel(self.tr("freelancer_installations")))
         list_layout.addWidget(self.installation_list)
 
         list_actions = QHBoxLayout()
@@ -74,10 +84,10 @@ class SettingsDialog(QDialog):
 
         editor_column = QWidget()
         editor_layout = QVBoxLayout(editor_column)
-        editor_layout.addWidget(QLabel("Details"))
+        editor_layout.addWidget(QLabel(self.tr("details")))
 
         form_layout = QFormLayout()
-        form_layout.addRow("Name", self.name_edit)
+        form_layout.addRow(self.tr("name"), self.name_edit)
         form_layout.addRow("Freelancer.exe", self._with_button(self.exe_path_edit, self.browse_exe_button))
         form_layout.addRow(
             "PerfOptions.ini",
@@ -126,12 +136,12 @@ class SettingsDialog(QDialog):
             self._add_installation()
 
     def _build_list_item(self, installation: Installation) -> QListWidgetItem:
-        item = QListWidgetItem(installation.name or "Neue Installation")
+        item = QListWidgetItem(installation.name or self.tr("new_installation"))
         item.setData(Qt.ItemDataRole.UserRole, installation.id)
         return item
 
     def _add_installation(self) -> None:
-        installation = Installation.create(name="Neue Installation", exe_path="")
+        installation = Installation.create(name=self.tr("new_installation"), exe_path="")
         self._installations.append(installation)
         self.installation_list.addItem(self._build_list_item(installation))
         self.installation_list.setCurrentRow(self.installation_list.count() - 1)
@@ -178,7 +188,7 @@ class SettingsDialog(QDialog):
             return
 
         installation = self._installations[row]
-        installation.name = self.name_edit.text().strip() or "Neue Installation"
+        installation.name = self.name_edit.text().strip() or self.tr("new_installation")
         installation.exe_path = self.exe_path_edit.text().strip()
         installation.perf_options_path = self.perf_path_edit.text().strip()
         self.installation_list.item(row).setText(installation.name)
@@ -186,7 +196,7 @@ class SettingsDialog(QDialog):
     def _browse_executable(self) -> None:
         filename, _ = QFileDialog.getOpenFileName(
             self,
-            "Freelancer.exe auswaehlen",
+            self.tr("choose_exe_dialog"),
             self.exe_path_edit.text() or str(Path.home()),
             "Executable (*.exe)",
         )
@@ -198,7 +208,7 @@ class SettingsDialog(QDialog):
     def _browse_perf_options(self) -> None:
         filename, _ = QFileDialog.getOpenFileName(
             self,
-            "PerfOptions.ini auswaehlen",
+            self.tr("choose_perf_dialog"),
             self.perf_path_edit.text() or str(Path.home()),
             "INI files (*.ini)",
         )
@@ -218,8 +228,8 @@ class SettingsDialog(QDialog):
         if invalid_items:
             QMessageBox.warning(
                 self,
-                "Ungueltige Pfade",
-                "Mindestens ein Eintrag verweist auf eine nicht vorhandene Freelancer.exe.",
+                self.tr("invalid_paths_title"),
+                self.tr("invalid_paths_message"),
             )
             return
 
@@ -231,8 +241,8 @@ class SettingsDialog(QDialog):
         if invalid_perf_paths:
             QMessageBox.warning(
                 self,
-                "Ungueltige INI-Pfade",
-                "Mindestens ein PerfOptions.ini-Pfad zeigt in einen nicht vorhandenen Ordner.",
+                self.tr("invalid_ini_paths_title"),
+                self.tr("invalid_ini_paths_message"),
             )
             return
 
