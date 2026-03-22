@@ -13,20 +13,15 @@ class LauncherService:
         self.ini_service = ini_service
         self.resolution_service = resolution_service
 
-    def prepare_launch(self, installation: Installation, resolution: str) -> tuple[Path, Path | None]:
+    def prepare_launch(self, installation: Installation, resolution: str) -> Path:
         exe_path = Path(installation.exe_path)
         if not exe_path.exists():
             raise FileNotFoundError("The selected Freelancer executable does not exist.")
 
         width, height = self.resolution_service.parse_resolution(resolution)
         perf_options_path = self.ini_service.resolve_perf_options_path(installation.perf_options_path)
-
-        backup_path: Path | None = None
-        if perf_options_path.exists():
-            backup_path = self.ini_service.ensure_backup(perf_options_path)
-
         self.ini_service.apply_resolution(perf_options_path, width, height)
-        return perf_options_path, backup_path
+        return perf_options_path
 
     def launch(self, installation: Installation) -> None:
         exe_path = Path(installation.exe_path)

@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 from configparser import ConfigParser
-from datetime import datetime
 from pathlib import Path
-import shutil
 
 from PySide6.QtCore import QStandardPaths
 
@@ -21,12 +19,6 @@ class IniService:
     def resolve_perf_options_path(self, configured_path: str) -> Path:
         candidate = Path(configured_path).expanduser() if configured_path else self.default_perf_options_path()
         return candidate
-
-    def ensure_backup(self, ini_path: Path) -> Path:
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        backup_path = ini_path.with_suffix(f".{timestamp}.bak")
-        shutil.copy2(ini_path, backup_path)
-        return backup_path
 
     def read_resolution(self, ini_path: Path) -> str:
         if not ini_path.exists():

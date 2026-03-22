@@ -2,6 +2,13 @@ QMainWindow {
   background-color: #101726;
 }
 
+QDialog,
+QMessageBox,
+QMenu,
+QWidget#qt_scrollarea_viewport {
+  background-color: #101726;
+}
+
 QWidget {
   color: #e8eefc;
   font-family: "Segoe UI";
@@ -37,6 +44,9 @@ QPushButton:hover {
 }
 
 QListWidget,
+QListView,
+QTreeView,
+QTableView,
 QLineEdit,
 QComboBox {
   background: #162033;
@@ -45,6 +55,24 @@ QComboBox {
   padding: 8px;
 }
 
+QComboBox QAbstractItemView,
+QAbstractItemView {
+  background: #162033;
+  color: #e8eefc;
+  border: 1px solid #294066;
+  selection-background-color: #25406f;
+  selection-color: #e8eefc;
+}
+
+QComboBox::drop-down {
+  border: 0;
+  padding-right: 6px;
+}
+
+QComboBox::down-arrow {
+  width: 10px;
+  height: 10px;
+}
 
 QListWidget::item {
   border-radius: 8px;
@@ -63,10 +91,30 @@ QListWidget::item:hover {
 
 QPushButton {
   background: #1f5fbf;
+  color: #f7fbff;
   border: 0;
   border-radius: 10px;
   padding: 10px 14px;
   font-weight: 600;
+}
+
+QPushButton[variant="secondary"] {
+  background: #1c2940;
+  border: 1px solid #33496f;
+  color: #d7e2f6;
+}
+
+QPushButton[variant="secondary"]:hover {
+  background: #243654;
+}
+
+QPushButton[variant="danger"] {
+  background: #7d2b37;
+  color: #fff2f4;
+}
+
+QPushButton[variant="danger"]:hover {
+  background: #9a3545;
 }
 
 QPushButton:disabled {
@@ -76,4 +124,23 @@ QPushButton:disabled {
 
 QStatusBar {
   background: #162033;
+}
+
+QStatusBar::item {
+  border: 0;
+}
+
+QMenu {
+  border: 1px solid #294066;
+  padding: 6px;
+}
+
+QMenu::item {
+  background: transparent;
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+QMenu::item:selected {
+  background: #25406f;
 }

@@ -4,5 +4,7 @@ __pycache__/
 *.pyo
 *.pyd
 dist/
+dist-x64/
 build/
+build-x64/
 *.spec

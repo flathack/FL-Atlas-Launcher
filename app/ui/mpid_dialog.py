@@ -4,13 +4,14 @@ from copy import deepcopy
 import json
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
     QFormLayout,
+    QGridLayout,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -19,6 +20,9 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QHeaderView,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -47,16 +51,29 @@ class MpidDialog(QDialog):
         self.mpid_service = mpid_service
         self.transfer_service = MpidTransferService()
 
-        self.info_label = QLabel()
-        self.info_label.setWordWrap(True)
-        self.registry_path_label = QLabel(self.tr("registry_label", path=self.mpid_service.REGISTRY_PATH))
-        self.sync_hint_label = QLabel(self.tr("sync_folder_hint"))
-        self.sync_hint_label.setWordWrap(True)
         self.sync_path_edit = QLineEdit(sync_path)
         self.sync_path_edit.setPlaceholderText(r"\\NAS\Freelancer\MPIDs")
         self.sync_browse_button = QPushButton(self.tr("choose_folder"))
         self.profile_list = QListWidget()
         self.profile_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.value_details_label = QLabel(self.tr("mpid_profile_fields"))
+        self.value_table = QTableWidget(0, 3)
+        self.value_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.value_table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.value_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.value_table.setAlternatingRowColors(False)
+        self.value_table.verticalHeader().setVisible(False)
+        self.value_table.horizontalHeader().setStretchLastSection(False)
+        self.value_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self.value_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self.value_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.value_table.setHorizontalHeaderLabels(
+            [
+                self.tr("field_name"),
+                self.tr("field_type"),
+                self.tr("field_value"),
+            ]
+        )
 
         self.capture_button = QPushButton(self.tr("save_current_id"))
         self.apply_button = QPushButton(self.tr("activate_selected_id"))
@@ -69,6 +86,7 @@ class MpidDialog(QDialog):
         self.button_box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
+        self._configure_button_styles()
 
         self._build_ui()
         self._connect_signals()
@@ -86,36 +104,90 @@ class MpidDialog(QDialog):
     def tr(self, key: str, **kwargs: object) -> str:
         return self.translator.text(key, **kwargs)
 
+    def _configure_button_styles(self) -> None:
+        for button in (self.capture_button, self.apply_button):
+            button.setProperty("variant", "primary")
+            button.setMinimumHeight(38)
+
+        for button in (self.import_button, self.export_button, self.rename_button, self.sync_browse_button, self.sync_button):
+            button.setProperty("variant", "secondary")
+            button.setMinimumHeight(38)
+
+        self.sync_button.setText("")
+        self.sync_button.setToolTip(self.tr("sync"))
+        self.sync_button.setIcon(self.style().standardIcon(self.style().StandardPixmap.SP_BrowserReload))
+        self.sync_button.setIconSize(QSize(18, 18))
+        self.sync_button.setFixedSize(42, 38)
+
+        for button in (self.regenerate_button, self.delete_button):
+            button.setProperty("variant", "danger")
+            button.setMinimumHeight(38)
+
+        save_button = self.button_box.button(QDialogButtonBox.StandardButton.Save)
+        cancel_button = self.button_box.button(QDialogButtonBox.StandardButton.Cancel)
+        if save_button is not None:
+            save_button.setText(self.tr("save"))
+            save_button.setProperty("variant", "primary")
+            save_button.setMinimumHeight(38)
+        if cancel_button is not None:
+            cancel_button.setText(self.tr("cancel"))
+            cancel_button.setProperty("variant", "secondary")
+            cancel_button.setMinimumHeight(38)
+
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
-        root.addWidget(self.registry_path_label)
-        root.addWidget(self.info_label)
-        root.addWidget(self.sync_hint_label)
+        root.setSpacing(14)
 
         sync_row = QWidget()
         sync_layout = QHBoxLayout(sync_row)
         sync_layout.setContentsMargins(0, 0, 0, 0)
+        sync_layout.setSpacing(10)
         sync_layout.addWidget(self.sync_path_edit, 1)
         sync_layout.addWidget(self.sync_browse_button)
+        sync_layout.addWidget(self.sync_button)
 
         sync_form = QFormLayout()
         sync_form.addRow(self.tr("sync_folder"), sync_row)
         root.addLayout(sync_form)
-        root.addWidget(self.profile_list, 1)
+
+        content = QWidget()
+        content_layout = QHBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(16)
+        content_layout.addWidget(self.profile_list, 1)
+
+        details = QWidget()
+        details_layout = QVBoxLayout(details)
+        details_layout.setContentsMargins(0, 0, 0, 0)
+        details_layout.setSpacing(8)
+        details_layout.addWidget(self.value_details_label)
+        details_layout.addWidget(self.value_table, 1)
+        content_layout.addWidget(details, 2)
+
+        root.addWidget(content, 1)
 
         actions = QWidget()
-        actions_layout = QHBoxLayout(actions)
+        actions_layout = QGridLayout(actions)
         actions_layout.setContentsMargins(0, 0, 0, 0)
-        actions_layout.addWidget(self.capture_button)
-        actions_layout.addWidget(self.apply_button)
-        actions_layout.addWidget(self.regenerate_button)
-        actions_layout.addWidget(self.import_button)
-        actions_layout.addWidget(self.export_button)
-        actions_layout.addWidget(self.sync_button)
-        actions_layout.addWidget(self.rename_button)
-        actions_layout.addWidget(self.delete_button)
+        actions_layout.setHorizontalSpacing(10)
+        actions_layout.setVerticalSpacing(10)
+        actions_layout.addWidget(self.capture_button, 0, 0, 1, 2)
+        actions_layout.addWidget(self.apply_button, 0, 2, 1, 2)
+        actions_layout.addWidget(self.import_button, 1, 0)
+        actions_layout.addWidget(self.export_button, 1, 1)
+        actions_layout.addWidget(self.rename_button, 1, 2)
+        actions_layout.addWidget(self.delete_button, 1, 3)
+        actions_layout.addWidget(self.regenerate_button, 1, 4)
+        for column in range(5):
+            actions_layout.setColumnStretch(column, 1)
         root.addWidget(actions)
-        root.addWidget(self.button_box)
+
+        footer = QWidget()
+        footer_layout = QHBoxLayout(footer)
+        footer_layout.setContentsMargins(0, 0, 0, 0)
+        footer_layout.addStretch(1)
+        footer_layout.addWidget(self.button_box)
+        root.addWidget(footer)
 
     def _connect_signals(self) -> None:
         self.capture_button.clicked.connect(self._capture_current_profile)
@@ -134,23 +206,34 @@ class MpidDialog(QDialog):
         self.button_box.rejected.connect(self.reject)
 
     def _populate_profiles(self) -> None:
+        selected_profile = self._selected_profile()
+        selected_profile_id = selected_profile.id if selected_profile is not None else None
+        active_profile_id = self.mpid_service.current_profile_id(self._profiles)
         self.profile_list.clear()
+
         for profile in self._profiles:
             item = QListWidgetItem(profile.name or self.tr("unnamed_profile"))
             item.setData(Qt.ItemDataRole.UserRole, profile.id)
             item.setToolTip(self.tr("registry_values_tooltip", count=len(profile.values)))
+            if profile.id == active_profile_id:
+                font = item.font()
+                font.setBold(True)
+                item.setFont(font)
             self.profile_list.addItem(item)
 
-        if self.profile_list.count():
+        if selected_profile_id is not None:
+            for index in range(self.profile_list.count()):
+                if self.profile_list.item(index).data(Qt.ItemDataRole.UserRole) == selected_profile_id:
+                    self.profile_list.setCurrentRow(index)
+                    break
+            else:
+                if self.profile_list.count():
+                    self.profile_list.setCurrentRow(0)
+        elif self.profile_list.count():
             self.profile_list.setCurrentRow(0)
         self._update_action_state()
 
     def _refresh_info(self) -> None:
-        names = self.mpid_service.current_profile_value_names()
-        if names:
-            self.info_label.setText(self.tr("registry_active_summary", names=", ".join(names)))
-        else:
-            self.info_label.setText(self.tr("no_registry_mpid_summary"))
         self.regenerate_button.setEnabled(self.mpid_service.has_mpid_values())
         self.export_button.setEnabled(bool(self._profiles))
         self.sync_button.setEnabled(bool(self.sync_path))
@@ -166,6 +249,34 @@ class MpidDialog(QDialog):
         self.apply_button.setEnabled(has_selection)
         self.rename_button.setEnabled(has_selection)
         self.delete_button.setEnabled(has_selection)
+        self._populate_value_table()
+
+    def _populate_value_table(self) -> None:
+        profile = self._selected_profile()
+        values = profile.values if profile is not None else []
+        self.value_table.setRowCount(len(values))
+
+        for row, value in enumerate(values):
+            name_item = QTableWidgetItem(value.name)
+            type_item = QTableWidgetItem(self._format_value_type(value.value_type))
+            data_item = QTableWidgetItem(value.data)
+            data_item.setToolTip(value.data)
+            self.value_table.setItem(row, 0, name_item)
+            self.value_table.setItem(row, 1, type_item)
+            self.value_table.setItem(row, 2, data_item)
+
+        if not values:
+            self.value_table.clearContents()
+
+    def _format_value_type(self, value_type: int) -> str:
+        type_names = {
+            1: "REG_SZ",
+            3: "REG_BINARY",
+            4: "REG_DWORD",
+            7: "REG_MULTI_SZ",
+            11: "REG_QWORD",
+        }
+        return type_names.get(value_type, self.tr("registry_type_unknown", value_type=value_type))
 
     def _capture_current_profile(self) -> None:
         values = self.mpid_service.read_current_profile_values()
@@ -174,6 +285,17 @@ class MpidDialog(QDialog):
                 self,
                 self.tr("no_mpid_found_title"),
                 self.tr("no_mpid_found_message"),
+            )
+            return
+
+        existing_profile_id = self.mpid_service.current_profile_id(self._profiles)
+        if existing_profile_id is not None:
+            existing_profile = next((profile for profile in self._profiles if profile.id == existing_profile_id), None)
+            profile_name = existing_profile.name if existing_profile is not None else self.tr("unnamed_profile")
+            QMessageBox.information(
+                self,
+                self.tr("duplicate_mpid_title"),
+                self.tr("duplicate_mpid_message", name=profile_name),
             )
             return
 
@@ -206,6 +328,7 @@ class MpidDialog(QDialog):
             )
             return
 
+        self._populate_profiles()
         self._refresh_info()
         QMessageBox.information(
             self,
@@ -240,6 +363,7 @@ class MpidDialog(QDialog):
             )
             return
 
+        self._populate_profiles()
         self._refresh_info()
         if deleted:
             QMessageBox.information(

@@ -4,8 +4,8 @@ import json
 from pathlib import Path
 import threading
 
-from PySide6.QtCore import QFileInfo, QObject, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QIcon
+from PySide6.QtCore import QFileInfo, QObject, QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QAction, QDesktopServices, QIcon
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFileIconProvider,
@@ -15,10 +15,13 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QStatusBar,
     QToolBar,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -43,6 +46,7 @@ class SyncNotifier(QObject):
 
 class MainWindow(QMainWindow):
     SYNC_POLL_INTERVAL_MS = 15000
+    HELP_WIKI_URL = "https://github.com/flathack/FL-Atlas-Launcher/wiki"
 
     def __init__(self, config_service: ConfigService, app_version: str) -> None:
         super().__init__()
@@ -107,8 +111,18 @@ class MainWindow(QMainWindow):
         self.language_combo.addItem(self.tr("language_en"), "en")
         self.language_combo.setCurrentIndex(max(0, self.language_combo.findData(self.config.language)))
         self.language_combo.activated.connect(lambda _index: self._change_language())
-        self.sync_status_dot = QLabel("●")
+        self.sync_status_dot = QLabel(chr(0x25CF))
         self.sync_status_label = QLabel()
+        self.help_button = QToolButton()
+        self.help_button.setText("?")
+        self.help_button.setToolTip(self.tr("help"))
+        self.help_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.help_button.setMinimumSize(QSize(30, 30))
+
+        help_menu = QMenu(self.help_button)
+        help_wiki_action = help_menu.addAction(self.tr("help_open_wiki"))
+        help_wiki_action.triggered.connect(self._open_help_wiki)
+        self.help_button.setMenu(help_menu)
 
         toolbar = QToolBar(self.tr("toolbar_main"))
         toolbar.setMovable(False)
@@ -133,6 +147,10 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(QLabel(self.tr("sync_status")))
         toolbar.addWidget(self.sync_status_dot)
         toolbar.addWidget(self.sync_status_label)
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        toolbar.addWidget(spacer)
+        toolbar.addWidget(self.help_button)
 
         root = QWidget()
         layout = QVBoxLayout(root)
@@ -339,7 +357,7 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            perf_path, backup_path = self.launcher_service.prepare_launch(
+            perf_path = self.launcher_service.prepare_launch(
                 installation,
                 self.resolution_combo.currentText(),
             )
@@ -374,8 +392,6 @@ class MainWindow(QMainWindow):
             resolution=self.resolution_combo.currentText(),
             path=perf_path,
         )
-        if backup_path is not None:
-            message += self.tr("backup_suffix", name=backup_path.name)
         self.statusBar().showMessage(message, 8000)
 
     def _change_language(self) -> None:
@@ -505,3 +521,6 @@ class MainWindow(QMainWindow):
         self.sync_status_label.setText(text)
         self.sync_status_label.setToolTip(self.config.mpid_sync_path)
         self._sync_state = state
+
+    def _open_help_wiki(self) -> None:
+        QDesktopServices.openUrl(QUrl(self.HELP_WIKI_URL))
