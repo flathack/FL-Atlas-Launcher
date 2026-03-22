@@ -50,6 +50,8 @@ class MpidDialog(QDialog):
         self.info_label = QLabel()
         self.info_label.setWordWrap(True)
         self.registry_path_label = QLabel(self.tr("registry_label", path=self.mpid_service.REGISTRY_PATH))
+        self.sync_hint_label = QLabel(self.tr("sync_folder_hint"))
+        self.sync_hint_label.setWordWrap(True)
         self.sync_path_edit = QLineEdit(sync_path)
         self.sync_path_edit.setPlaceholderText(r"\\NAS\Freelancer\MPIDs")
         self.sync_browse_button = QPushButton(self.tr("choose_folder"))
@@ -88,6 +90,7 @@ class MpidDialog(QDialog):
         root = QVBoxLayout(self)
         root.addWidget(self.registry_path_label)
         root.addWidget(self.info_label)
+        root.addWidget(self.sync_hint_label)
 
         sync_row = QWidget()
         sync_layout = QHBoxLayout(sync_row)

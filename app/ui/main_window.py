@@ -89,10 +89,6 @@ class MainWindow(QMainWindow):
         self.resolution_combo = QComboBox()
         self.launch_button = QPushButton(self.tr("start"))
         self.launch_button.setMinimumHeight(40)
-        self.language_combo = QComboBox()
-        self.language_combo.addItem(self.tr("language_de"), "de")
-        self.language_combo.addItem(self.tr("language_en"), "en")
-        self.language_combo.setCurrentIndex(max(0, self.language_combo.findData(self.config.language)))
         self.sync_timer = QTimer(self)
         self.sync_timer.setInterval(self.SYNC_POLL_INTERVAL_MS)
 
@@ -106,6 +102,11 @@ class MainWindow(QMainWindow):
         self.sync_timer.start()
 
     def _build_ui(self) -> None:
+        self.language_combo = QComboBox()
+        self.language_combo.addItem(self.tr("language_de"), "de")
+        self.language_combo.addItem(self.tr("language_en"), "en")
+        self.language_combo.setCurrentIndex(max(0, self.language_combo.findData(self.config.language)))
+        self.language_combo.activated.connect(lambda _index: self._change_language())
         self.sync_status_dot = QLabel("●")
         self.sync_status_label = QLabel()
 
@@ -168,8 +169,7 @@ class MainWindow(QMainWindow):
         self.mpid_combo.currentIndexChanged.connect(self._apply_selected_mpid_profile)
         self.launch_button.clicked.connect(self._launch_selected_installation)
         self.resolution_combo.currentTextChanged.connect(self._save_selected_resolution)
-        self.language_combo.currentIndexChanged.connect(self._change_language)
-        self.sync_timer.timeout.connect(self._refresh_sync_state)
+        self.sync_timer.timeout.connect(lambda: self._refresh_sync_state(trigger_sync=False))
         self.sync_notifier.result_ready.connect(self._apply_sync_result)
 
     def _populate_mpid_profiles(self) -> None:
@@ -265,20 +265,24 @@ class MainWindow(QMainWindow):
             self.translator,
             self,
         )
+        previous_sync_path = self.config.mpid_sync_path
         if dialog.exec():
             self.config.mpid_profiles = dialog.profiles
             self.config.mpid_sync_path = dialog.sync_path
             self._persist_config()
             self.statusBar().showMessage(self.tr("mpid_profiles_saved"), 4000)
+        elif dialog.sync_path != previous_sync_path:
+            self.config.mpid_sync_path = dialog.sync_path
+            self._persist_config()
         self._populate_mpid_profiles()
-        self._refresh_sync_state(trigger_sync=True)
+        self._refresh_sync_state(trigger_sync=False)
 
     def _refresh_view(self) -> None:
         self.config = AppConfig.from_dict(self.config_service.load().to_dict())
         self._populate_mpid_profiles()
         self._populate_resolutions()
         self._populate_installations()
-        self._refresh_sync_state(trigger_sync=True)
+        self._refresh_sync_state(trigger_sync=False)
         self.statusBar().showMessage(self.tr("view_refreshed"), 3000)
 
     def _save_selected_resolution(self, resolution: str) -> None:
@@ -387,12 +391,6 @@ class MainWindow(QMainWindow):
     def _rebuild_translated_ui(self) -> None:
         self.setWindowTitle(self.tr("app_title", version=self.app_version))
         self.launch_button.setText(self.tr("start"))
-        self.language_combo.blockSignals(True)
-        self.language_combo.clear()
-        self.language_combo.addItem(self.tr("language_de"), "de")
-        self.language_combo.addItem(self.tr("language_en"), "en")
-        self.language_combo.setCurrentIndex(max(0, self.language_combo.findData(self.config.language)))
-        self.language_combo.blockSignals(False)
         central_widget = self.takeCentralWidget()
         if central_widget is not None:
             central_widget.deleteLater()

@@ -13,7 +13,7 @@ else:
     from .services.config_service import ConfigService
     from .ui.main_window import MainWindow
 
-APP_VERSION = "v0.1.0"
+APP_VERSION = "v0.2.0"
 
 
 def main() -> int:
