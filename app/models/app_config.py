@@ -10,6 +10,7 @@ from .mpid_profile import MpidProfile
 class AppConfig:
     theme: str = "system"
     language: str = "de"
+    cheater_mode: bool = False
     selected_resolution: str = ""
     installations: list[Installation] = field(default_factory=list)
     mpid_profiles: list[MpidProfile] = field(default_factory=list)
@@ -19,6 +20,7 @@ class AppConfig:
         return {
             "theme": self.theme,
             "language": self.language,
+            "cheater_mode": self.cheater_mode,
             "selected_resolution": self.selected_resolution,
             "installations": [installation.to_dict() for installation in self.installations],
             "mpid_profiles": [profile.to_dict() for profile in self.mpid_profiles],
@@ -40,6 +42,7 @@ class AppConfig:
         return cls(
             theme=data.get("theme", "system"),
             language=data.get("language", "de"),
+            cheater_mode=bool(data.get("cheater_mode", False)),
             selected_resolution=data.get("selected_resolution", ""),
             installations=installations,
             mpid_profiles=mpid_profiles,

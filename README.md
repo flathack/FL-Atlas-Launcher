@@ -11,6 +11,9 @@ The project currently includes:
 - a main window with installation list
 - a settings dialog to add, edit, and remove installations
 - a resolution selector scaffold
+- running-process detection with highlighted installation icons
+- a context menu for stopping a running Freelancer.exe
+- a cheater mode sidebar with BINI conversion, Reveal Everything, and ship-handling tools
 
 ## Run locally
 

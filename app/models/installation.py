@@ -10,14 +10,22 @@ class Installation:
     name: str
     exe_path: str
     perf_options_path: str = ""
+    cheater_mode_enabled: bool = False
 
     @classmethod
-    def create(cls, name: str, exe_path: str, perf_options_path: str = "") -> "Installation":
+    def create(
+        cls,
+        name: str,
+        exe_path: str,
+        perf_options_path: str = "",
+        cheater_mode_enabled: bool = False,
+    ) -> "Installation":
         return cls(
             id=str(uuid4()),
             name=name.strip(),
             exe_path=exe_path.strip(),
             perf_options_path=perf_options_path.strip(),
+            cheater_mode_enabled=cheater_mode_enabled,
         )
 
     def to_dict(self) -> dict:
@@ -30,4 +38,5 @@ class Installation:
             name=data.get("name", "").strip(),
             exe_path=data.get("exe_path", "").strip(),
             perf_options_path=data.get("perf_options_path", "").strip(),
+            cheater_mode_enabled=bool(data.get("cheater_mode_enabled", False)),
         )
