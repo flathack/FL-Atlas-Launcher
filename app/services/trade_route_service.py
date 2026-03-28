@@ -23,6 +23,12 @@ class TradeRouteShipOption:
 
 
 @dataclass(slots=True)
+class TradeRouteFactionOption:
+    nickname: str
+    display_name: str
+
+
+@dataclass(slots=True)
 class TradeRouteRow:
     source_system_nickname: str
     source_system: str
@@ -86,6 +92,7 @@ class InstallationLayout:
     freelancer_ini: Path
     goods_files: list[Path]
     market_files: list[Path]
+    group_files: list[Path]
     universe_file: Path | None
 
 
@@ -94,6 +101,7 @@ class TradeRouteContext:
     layout: InstallationLayout
     commodity_prices: dict[str, int]
     commodity_names: dict[str, str]
+    faction_names: dict[str, str]
     system_index: dict[str, dict[str, object]]
     base_index: dict[str, dict[str, object]]
     adjacency: dict[str, set[str]]
@@ -116,15 +124,32 @@ class TradeRouteService:
             if row.cargo_capacity > 0
         ]
 
+    def faction_options(self, installation: Installation) -> list[TradeRouteFactionOption]:
+        layout = self._load_layout(installation)
+        resource_dlls = self.cheat_service._resource_dll_paths(installation)
+        faction_names = self._load_faction_names(layout.group_files, resource_dlls)
+        options = [
+            TradeRouteFactionOption(nickname=nickname, display_name=display_name)
+            for nickname, display_name in faction_names.items()
+        ]
+        options.sort(key=lambda item: item.display_name.lower())
+        return options
+
     def best_routes_by_system(
         self,
         installation: Installation,
         *,
         cargo_capacity: int,
         max_jumps: int,
+        player_reputation: dict[str, float] | None = None,
     ) -> list[TradeRouteRow]:
         context = self._build_trade_route_context(installation)
-        candidate_routes = self._candidate_routes(context, cargo_capacity=cargo_capacity, max_jumps=max_jumps)
+        candidate_routes = self._candidate_routes(
+            context,
+            cargo_capacity=cargo_capacity,
+            max_jumps=max_jumps,
+            player_reputation=player_reputation,
+        )
         best_by_system: dict[str, TradeRouteRow] = {}
         for route in candidate_routes:
             current = best_by_system.get(route.source_system_nickname)
@@ -142,11 +167,17 @@ class TradeRouteService:
         cargo_capacity: int,
         max_jumps: int,
         leg_count: int,
+        player_reputation: dict[str, float] | None = None,
         max_results: int = 20,
     ) -> list[TradeRouteLoopRow]:
         leg_count = max(3, min(int(leg_count), 6))
         context = self._build_trade_route_context(installation)
-        candidate_routes = self._candidate_routes(context, cargo_capacity=cargo_capacity, max_jumps=max_jumps)
+        candidate_routes = self._candidate_routes(
+            context,
+            cargo_capacity=cargo_capacity,
+            max_jumps=max_jumps,
+            player_reputation=player_reputation,
+        )
         if not candidate_routes:
             return []
 
@@ -236,8 +267,10 @@ class TradeRouteService:
         layout = self._load_layout(installation)
         resource_dlls = self.cheat_service._resource_dll_paths(installation)
         commodity_prices, commodity_names = self._scan_commodity_prices(layout.goods_files, resource_dlls)
+        faction_names = self._load_faction_names(layout.group_files, resource_dlls)
         system_index = self._build_system_index(layout.universe_file, resource_dlls)
         base_index = self._build_base_index(layout.universe_file, resource_dlls)
+        self._enrich_base_index_from_system_files(layout, system_index, base_index)
         adjacency = self._build_system_adjacency(layout.universe_file)
         market_entries = self._extract_market_entries(layout.market_files, base_index, commodity_prices)
         market_entries = self._add_implicit_base_price_sinks(market_entries, base_index, commodity_prices)
@@ -245,6 +278,7 @@ class TradeRouteService:
             layout=layout,
             commodity_prices=commodity_prices,
             commodity_names=commodity_names,
+            faction_names=faction_names,
             system_index=system_index,
             base_index=base_index,
             adjacency=adjacency,
@@ -257,13 +291,20 @@ class TradeRouteService:
         *,
         cargo_capacity: int,
         max_jumps: int,
+        player_reputation: dict[str, float] | None = None,
     ) -> list[TradeRouteRow]:
         if not context.commodity_prices:
             return []
+        normalized_reputation = self._normalize_reputation_map(player_reputation)
         routes: list[TradeRouteRow] = []
         for commodity, entries in context.market_entries.items():
-            sources = [entry for entry in entries if bool(entry["is_source"])] or entries
-            sinks = [entry for entry in entries if not bool(entry["is_source"])]
+            accessible_entries = [
+                entry
+                for entry in entries
+                if self._is_market_entry_accessible(context.base_index, entry, normalized_reputation)
+            ]
+            sources = [entry for entry in accessible_entries if bool(entry["is_source"])] or accessible_entries
+            sinks = [entry for entry in accessible_entries if not bool(entry["is_source"])]
             if not sources or not sinks:
                 continue
             for source in sources:
@@ -372,13 +413,78 @@ class TradeRouteService:
         sections = self._parse_ini_file(freelancer_ini)
         goods_files = self._resolve_data_files(freelancer_ini, sections, "goods")
         market_files = self._resolve_data_files(freelancer_ini, sections, "markets")
+        group_files = self._resolve_data_files(freelancer_ini, sections, "groups")
         universe_files = self._resolve_data_files(freelancer_ini, sections, "universe")
         return InstallationLayout(
             freelancer_ini=freelancer_ini,
             goods_files=goods_files,
             market_files=market_files,
+            group_files=group_files,
             universe_file=universe_files[0] if universe_files else None,
         )
+
+    def _load_faction_names(self, group_files: list[Path], resource_dlls: list[Path]) -> dict[str, str]:
+        faction_names: dict[str, str] = {}
+        for group_file in group_files:
+            for section_name, entries in self._parse_ini_file(group_file):
+                if section_name.lower() != "group":
+                    continue
+                nickname = ""
+                ids_name = ""
+                ids_short_name = ""
+                for key, value in entries:
+                    key_lower = key.lower()
+                    if key_lower == "nickname":
+                        nickname = value.strip().lower()
+                    elif key_lower in {"ids_name", "strid_name"} and not ids_name:
+                        ids_name = value.strip()
+                    elif key_lower == "ids_short_name" and not ids_short_name:
+                        ids_short_name = value.strip()
+                if not nickname:
+                    continue
+                resolved_name = ""
+                if ids_short_name:
+                    resolved_name = self.cheat_service._resolve_ids_name(
+                        self.cheat_service._parse_int(ids_short_name),
+                        resource_dlls,
+                    )
+                if not resolved_name and ids_name:
+                    resolved_name = self.cheat_service._resolve_ids_name(
+                        self.cheat_service._parse_int(ids_name),
+                        resource_dlls,
+                    )
+                faction_names[nickname] = resolved_name or nickname
+        return faction_names
+
+    def _enrich_base_index_from_system_files(
+        self,
+        layout: InstallationLayout,
+        system_index: dict[str, dict[str, object]],
+        base_index: dict[str, dict[str, object]],
+    ) -> None:
+        universe_root = layout.universe_file.parent if layout.universe_file is not None else None
+        if universe_root is None:
+            return
+        for system_nick, system_info in system_index.items():
+            relative_path = str(system_info.get("file", "")).strip()
+            if not relative_path:
+                continue
+            system_file = self._ci_resolve(universe_root, relative_path)
+            if system_file is None or not system_file.is_file():
+                continue
+            for section_name, entries in self._parse_ini_file(system_file):
+                if section_name.lower() != "object":
+                    continue
+                values = {key.lower(): value for key, value in entries}
+                base_nick = str(values.get("base") or values.get("dock_with") or "").strip().lower()
+                if not base_nick or base_nick not in base_index:
+                    continue
+                if "pos" in values:
+                    base_index[base_nick]["pos"] = self._parse_2d_position(values.get("pos", "0,0,0"))
+                reputation_group = str(values.get("reputation", "")).strip().lower()
+                if reputation_group:
+                    base_index[base_nick]["faction"] = reputation_group
+                base_index[base_nick]["system"] = system_nick
 
     def _resolve_data_files(self, freelancer_ini: Path, sections: list[ParsedSection], key_name: str) -> list[Path]:
         data_root = freelancer_ini.parent.parent / "DATA" if freelancer_ini.parent.name.lower() == "exe" else freelancer_ini.parent / "DATA"
@@ -505,6 +611,8 @@ class TradeRouteService:
                     if not commodity_lower.startswith("commodity_") or commodity_lower.startswith("commodity_pilot_"):
                         continue
                     try:
+                        required_level = int(float(fields[1]))
+                        required_reputation = float(fields[2])
                         relation_flag = int(float(fields[5]))
                         multiplier = float(fields[6])
                     except ValueError:
@@ -519,6 +627,8 @@ class TradeRouteService:
                             "base_nick": base_nick,
                             "system": str(base_index[base_nick].get("system", "")).upper(),
                             "price": float(base_price) * multiplier,
+                            "required_level": required_level,
+                            "required_reputation": required_reputation,
                             "is_source": relation_flag == 0,
                         }
                     )
@@ -549,10 +659,40 @@ class TradeRouteService:
                         "base_nick": base_nick,
                         "system": str(base_index[base_nick].get("system", "")).upper(),
                         "price": float(base_price),
+                        "required_level": 0,
+                        "required_reputation": -1.0,
                         "is_source": False,
                     }
                 )
         return result
+
+    def _normalize_reputation_map(self, player_reputation: dict[str, float] | None) -> dict[str, float]:
+        normalized: dict[str, float] = {}
+        if not isinstance(player_reputation, dict):
+            return normalized
+        for faction, value in player_reputation.items():
+            try:
+                normalized[str(faction).strip().lower()] = max(-1.0, min(1.0, float(value)))
+            except (TypeError, ValueError):
+                continue
+        return normalized
+
+    def _is_market_entry_accessible(
+        self,
+        base_index: dict[str, dict[str, object]],
+        entry: dict[str, object],
+        player_reputation: dict[str, float],
+    ) -> bool:
+        base_nick = str(entry.get("base_nick", "")).strip().lower()
+        base_info = base_index.get(base_nick, {})
+        faction = str(base_info.get("faction", "")).strip().lower()
+        current_reputation = float(player_reputation.get(faction, 0.0)) if faction else 0.0
+        required_reputation = float(entry.get("required_reputation", -1.0) or -1.0)
+        if faction and current_reputation < 0.0:
+            return False
+        if required_reputation > -1.0 and current_reputation < required_reputation:
+            return False
+        return True
 
     def _build_system_index(self, universe_file: Path | None, resource_dlls: list[Path]) -> dict[str, dict[str, object]]:
         if universe_file is None or not universe_file.exists():

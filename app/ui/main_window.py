@@ -46,6 +46,7 @@ from app.services.process_service import ProcessService
 from app.services.resolution_service import ResolutionService
 from app.services.trade_route_service import TradeRouteService
 from app.ui.mpid_dialog import MpidDialog
+from app.ui.reputation_dialog import ReputationDialog
 from app.ui.ship_handling_dialog import ShipHandlingDialog, ShipInfoDialog
 from app.ui.settings_dialog import SettingsDialog
 from app.ui.trade_route_dialog import TradeRouteDialog
@@ -65,10 +66,11 @@ class MainWindow(QMainWindow):
     PROCESS_POLL_INTERVAL_MS = 2500
     HELP_WIKI_URL = "https://github.com/flathack/FL-Atlas-Launcher/wiki"
 
-    def __init__(self, config_service: ConfigService, app_version: str) -> None:
+    def __init__(self, config_service: ConfigService, app_version: str, *, show_cheat_features: bool = True) -> None:
         super().__init__()
         self.config_service = config_service
         self.app_version = app_version
+        self.show_cheat_features = bool(show_cheat_features)
         self.config = AppConfig.from_dict(config_service.config.to_dict())
         self.translator = Translator(self.config.language)
         self.icon_provider = QFileIconProvider()
@@ -89,8 +91,8 @@ class MainWindow(QMainWindow):
         self._round_trip_windows: list[TradeRouteRoundTripDialog] = []
         self.sync_notifier = SyncNotifier()
         self.process_notifier = ProcessNotifier()
-        self.cheat_service = CheatService(self.config_service.config_path.parent / "mod_backups")
-        self.trade_route_service = TradeRouteService(self.cheat_service)
+        self._cheat_service: CheatService | None = None
+        self._trade_route_service: TradeRouteService | None = None
         self.launcher_service = LauncherService(
             ini_service=self.ini_service,
             resolution_service=self.resolution_service,
@@ -154,11 +156,12 @@ class MainWindow(QMainWindow):
         self.help_button.setToolTip(self.tr("help"))
         self.help_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.help_button.setMinimumSize(QSize(30, 30))
-        self.cheater_mode_label = QLabel(self.tr("cheater_mode"))
-        self.cheater_mode_switch = QCheckBox()
-        self.cheater_mode_switch.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.cheater_mode_switch.setMinimumWidth(70)
-        self._apply_cheater_switch_style(False)
+        if self.show_cheat_features:
+            self.cheater_mode_label = QLabel(self.tr("cheater_mode"))
+            self.cheater_mode_switch = QCheckBox()
+            self.cheater_mode_switch.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.cheater_mode_switch.setMinimumWidth(70)
+            self._apply_cheater_switch_style(False)
 
         help_menu = QMenu(self.help_button)
         help_wiki_action = help_menu.addAction(self.tr("help_open_wiki"))
@@ -197,6 +200,11 @@ class MainWindow(QMainWindow):
         self.trade_routes_action.triggered.connect(self._open_trade_routes_dialog)
         toolbar.addAction(self.trade_routes_action)
 
+        self.reputation_action = QAction(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton), self.tr("reputation_open"), self)
+        self.reputation_action.setToolTip(self.tr("reputation_open"))
+        self.reputation_action.triggered.connect(self._open_reputation_dialog)
+        toolbar.addAction(self.reputation_action)
+
         self.round_trip_action = QAction(self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowRight), self.tr("trade_round_trip_open"), self)
         self.round_trip_action.setToolTip(self.tr("trade_round_trip_open"))
         self.round_trip_action.triggered.connect(self._open_round_trip_dialog)
@@ -206,9 +214,10 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
         toolbar.addWidget(self.sync_status_dot)
         toolbar.addWidget(self.sync_status_label)
-        toolbar.addSeparator()
-        toolbar.addWidget(self.cheater_mode_label)
-        toolbar.addWidget(self.cheater_mode_switch)
+        if self.show_cheat_features:
+            toolbar.addSeparator()
+            toolbar.addWidget(self.cheater_mode_label)
+            toolbar.addWidget(self.cheater_mode_switch)
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         toolbar.addWidget(spacer)
@@ -231,13 +240,14 @@ class MainWindow(QMainWindow):
         resolution_layout.addWidget(QLabel(self.tr("resolution")))
         resolution_layout.addWidget(self.resolution_combo, 1)
 
-        self.cheat_panel = self._build_cheat_panel()
         content_row = QWidget()
         content_layout = QHBoxLayout(content_row)
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(18)
         content_layout.addWidget(self.installation_list, 1)
-        content_layout.addWidget(self.cheat_panel)
+        if self.show_cheat_features:
+            self.cheat_panel = self._build_cheat_panel()
+            content_layout.addWidget(self.cheat_panel)
 
         layout.addWidget(mpid_row)
         layout.addWidget(content_row, 1)
@@ -357,6 +367,16 @@ class MainWindow(QMainWindow):
     def tr(self, key: str, **kwargs: object) -> str:
         return self.translator.text(key, **kwargs)
 
+    def _get_cheat_service(self) -> CheatService:
+        if self._cheat_service is None:
+            self._cheat_service = CheatService(self.config_service.config_path.parent / "mod_backups")
+        return self._cheat_service
+
+    def _get_trade_route_service(self) -> TradeRouteService:
+        if self._trade_route_service is None:
+            self._trade_route_service = TradeRouteService(self._get_cheat_service())
+        return self._trade_route_service
+
     def _connect_signals(self) -> None:
         self.installation_list.currentRowChanged.connect(self._on_installation_changed)
         self.installation_list.itemDoubleClicked.connect(lambda _item: self._launch_selected_installation())
@@ -365,14 +385,15 @@ class MainWindow(QMainWindow):
         self.mpid_combo.currentIndexChanged.connect(self._apply_selected_mpid_profile)
         self.launch_button.clicked.connect(self._launch_selected_installation)
         self.resolution_combo.currentTextChanged.connect(self._save_selected_resolution)
-        self.cheater_mode_switch.toggled.connect(self._toggle_cheater_mode)
-        self.bini_toggle.toggled.connect(self._toggle_bini_conversion)
-        self.cruise_charge_slider.valueChanged.connect(self._apply_cruise_charge_time)
-        self.jump_timing_toggle.toggled.connect(self._toggle_jump_timing)
-        self.jump_timing_slider.valueChanged.connect(self._apply_jump_timing)
-        self.reveal_toggle.toggled.connect(self._toggle_reveal_everything)
-        self.ship_handling_button.clicked.connect(self._open_ship_handling_dialog)
-        self.ship_handling_reset_button.clicked.connect(self._reset_ship_handling)
+        if self.show_cheat_features:
+            self.cheater_mode_switch.toggled.connect(self._toggle_cheater_mode)
+            self.bini_toggle.toggled.connect(self._toggle_bini_conversion)
+            self.cruise_charge_slider.valueChanged.connect(self._apply_cruise_charge_time)
+            self.jump_timing_toggle.toggled.connect(self._toggle_jump_timing)
+            self.jump_timing_slider.valueChanged.connect(self._apply_jump_timing)
+            self.reveal_toggle.toggled.connect(self._toggle_reveal_everything)
+            self.ship_handling_button.clicked.connect(self._open_ship_handling_dialog)
+            self.ship_handling_reset_button.clicked.connect(self._reset_ship_handling)
         if not self._persistent_signals_connected:
             self.sync_timer.timeout.connect(lambda: self._refresh_sync_state(trigger_sync=False))
             self.process_timer.timeout.connect(self._refresh_process_state)
@@ -460,8 +481,10 @@ class MainWindow(QMainWindow):
     def _update_launch_state(self) -> None:
         has_installation = self._current_installation() is not None
         self.launch_button.setEnabled(has_installation)
-        self.cheater_mode_switch.setEnabled(has_installation)
+        if self.show_cheat_features:
+            self.cheater_mode_switch.setEnabled(has_installation)
         self.trade_routes_action.setEnabled(has_installation)
+        self.reputation_action.setEnabled(has_installation)
         self.round_trip_action.setEnabled(has_installation)
         self._update_cheat_panel_state(has_installation)
         self._update_cheat_panel_visibility()
@@ -632,6 +655,8 @@ class MainWindow(QMainWindow):
         self._refresh_process_state()
 
     def _apply_cheater_switch_style(self, enabled: bool) -> None:
+        if not self.show_cheat_features or not hasattr(self, "cheater_mode_switch"):
+            return
         self.cheater_mode_switch.setText("ON" if enabled else "OFF")
         self.cheater_mode_switch.setStyleSheet(
             """
@@ -764,6 +789,8 @@ class MainWindow(QMainWindow):
         self._sync_state = state
 
     def _toggle_cheater_mode(self, enabled: bool) -> None:
+        if not self.show_cheat_features:
+            return
         if self._is_loading_cheat_controls:
             return
         installation = self._current_installation()
@@ -775,16 +802,20 @@ class MainWindow(QMainWindow):
         self._update_cheat_panel_visibility()
 
     def _update_cheat_panel_visibility(self) -> None:
-        if not hasattr(self, "cheat_panel"):
+        if not self.show_cheat_features or not hasattr(self, "cheat_panel"):
             return
         installation = self._current_installation()
         self.cheat_panel.setVisible(bool(installation and installation.cheater_mode_enabled))
 
     def _update_cheat_panel_state(self, has_installation: bool) -> None:
+        if not self.show_cheat_features:
+            return
         self.bini_toggle.setEnabled(has_installation)
         self.mod_controls_widget.setEnabled(has_installation)
 
     def _sync_cheat_panel_to_installation(self) -> None:
+        if not self.show_cheat_features:
+            return
         self._is_loading_cheat_controls = True
         installation = self._current_installation()
         if installation is None:
@@ -812,11 +843,12 @@ class MainWindow(QMainWindow):
             self.tr("cheat_selected_installation", name=installation.name)
         )
         try:
-            cruise_charge = self.cheat_service.get_cruise_charge_time(installation)
-            jump_timing = self.cheat_service.get_jump_timing_value(installation)
-            jump_timing_enabled = self.cheat_service.has_backup(installation, "jump_timing")
-            bini_pending = self.cheat_service.has_unconverted_bini_files(installation)
-            reveal_enabled = self.cheat_service.has_backup(installation, "reveal_everything")
+            cheat_service = self._get_cheat_service()
+            cruise_charge = cheat_service.get_cruise_charge_time(installation)
+            jump_timing = cheat_service.get_jump_timing_value(installation)
+            jump_timing_enabled = cheat_service.has_backup(installation, "jump_timing")
+            bini_pending = cheat_service.has_unconverted_bini_files(installation)
+            reveal_enabled = cheat_service.has_backup(installation, "reveal_everything")
         except OSError:
             cruise_charge = None
             jump_timing = None
@@ -994,7 +1026,7 @@ class MainWindow(QMainWindow):
         if installation is None:
             return
         try:
-            result = self.cheat_service.convert_bini_files(installation)
+            result = self._get_cheat_service().convert_bini_files(installation)
         except (OSError, ValueError) as error:
             self._is_loading_cheat_controls = True
             self.bini_toggle.setChecked(False)
@@ -1022,7 +1054,7 @@ class MainWindow(QMainWindow):
         if installation is None:
             return
         try:
-            value = self.cheat_service.set_cruise_charge_time(
+            value = self._get_cheat_service().set_cruise_charge_time(
                 installation,
                 slider_value / 10,
             )
@@ -1049,13 +1081,13 @@ class MainWindow(QMainWindow):
 
         try:
             if checked:
-                value = self.cheat_service.set_jump_timing(installation, self.jump_timing_slider.value() / 10)
+                value = self._get_cheat_service().set_jump_timing(installation, self.jump_timing_slider.value() / 10)
                 self.statusBar().showMessage(
                     self.tr("jump_timing_done_message", value=f"{value:.1f}"),
                     3000,
                 )
             else:
-                restored = self.cheat_service.reset_jump_timing(installation)
+                restored = self._get_cheat_service().reset_jump_timing(installation)
                 message = self.tr("jump_timing_reset_done") if restored else self.tr("jump_timing_reset_missing")
                 self.statusBar().showMessage(message, 3000)
                 self._sync_cheat_panel_to_installation()
@@ -1082,7 +1114,7 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            value = self.cheat_service.set_jump_timing(installation, slider_value / 10)
+            value = self._get_cheat_service().set_jump_timing(installation, slider_value / 10)
         except (OSError, ValueError) as error:
             QMessageBox.critical(
                 self,
@@ -1104,13 +1136,13 @@ class MainWindow(QMainWindow):
             return
         try:
             if checked:
-                result = self.cheat_service.apply_reveal_everything(installation)
+                result = self._get_cheat_service().apply_reveal_everything(installation)
                 self.statusBar().showMessage(
                     self.tr("reveal_done_message", count=result.changed_files),
                     4000,
                 )
             else:
-                restored = self.cheat_service.reset_reveal_everything(installation)
+                restored = self._get_cheat_service().reset_reveal_everything(installation)
                 message = self.tr("reveal_reset_done") if restored else self.tr("reveal_reset_missing")
                 self.statusBar().showMessage(message, 4000)
         except (OSError, ValueError) as error:
@@ -1129,7 +1161,7 @@ class MainWindow(QMainWindow):
         if installation is None:
             return
         try:
-            dialog = ShipInfoDialog(installation, self.cheat_service, self.translator, self)
+            dialog = ShipInfoDialog(installation, self._get_cheat_service(), self.translator, self)
         except OSError as error:
             QMessageBox.critical(
                 self,
@@ -1144,7 +1176,7 @@ class MainWindow(QMainWindow):
         if installation is None:
             return
         try:
-            dialog = ShipHandlingDialog(installation, self.cheat_service, self.translator, self)
+            dialog = ShipHandlingDialog(installation, self._get_cheat_service(), self.translator, self)
         except OSError as error:
             QMessageBox.critical(
                 self,
@@ -1159,7 +1191,13 @@ class MainWindow(QMainWindow):
         if installation is None:
             return
         try:
-            dialog = TradeRouteDialog(installation, self.trade_route_service, self.translator, self)
+            dialog = TradeRouteDialog(
+                installation,
+                self._get_trade_route_service(),
+                self.translator,
+                player_reputation=self._reputation_values_for_installation(installation.id),
+                parent=self,
+            )
         except OSError as error:
             QMessageBox.critical(
                 self,
@@ -1184,8 +1222,9 @@ class MainWindow(QMainWindow):
 
         dialog = TradeRouteRoundTripDialog(
             installation,
-            self.trade_route_service,
+            self._get_trade_route_service(),
             self.translator,
+            player_reputation=self._reputation_values_for_installation(installation.id),
             parent=self,
         )
         dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
@@ -1198,12 +1237,50 @@ class MainWindow(QMainWindow):
     def _forget_round_trip_window(self, dialog: TradeRouteRoundTripDialog) -> None:
         self._round_trip_windows = [window for window in self._round_trip_windows if window is not dialog]
 
+    def _open_reputation_dialog(self) -> None:
+        installation = self._current_installation()
+        if installation is None:
+            return
+        factions = self._get_trade_route_service().faction_options(installation)
+        if not factions:
+            QMessageBox.information(self, self.tr("reputation_dialog_title"), self.tr("reputation_dialog_empty"))
+            return
+        dialog = ReputationDialog(
+            factions,
+            self._reputation_values_for_installation(installation.id),
+            self.translator,
+            self,
+        )
+        if not dialog.exec():
+            return
+        self._save_reputation_values_for_installation(installation.id, dialog.values())
+        self.statusBar().showMessage(self.tr("reputation_saved_status", name=installation.name), 4000)
+
+    def _reputation_values_for_installation(self, installation_id: str) -> dict[str, float]:
+        values = self.config.faction_reputations.get(installation_id, {})
+        if not isinstance(values, dict):
+            return {}
+        result: dict[str, float] = {}
+        for nickname, reputation in values.items():
+            try:
+                result[str(nickname).strip().lower()] = max(-1.0, min(1.0, float(reputation)))
+            except (TypeError, ValueError):
+                continue
+        return result
+
+    def _save_reputation_values_for_installation(self, installation_id: str, values: dict[str, float]) -> None:
+        self.config.faction_reputations[installation_id] = {
+            str(nickname).strip().lower(): max(-1.0, min(1.0, float(reputation)))
+            for nickname, reputation in values.items()
+        }
+        self._persist_config()
+
     def _reset_ship_handling(self) -> None:
         installation = self._current_installation()
         if installation is None:
             return
         try:
-            restored = self.cheat_service.reset_ship_handling(installation)
+            restored = self._get_cheat_service().reset_ship_handling(installation)
         except OSError as error:
             QMessageBox.critical(
                 self,

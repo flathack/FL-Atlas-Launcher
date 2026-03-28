@@ -19,7 +19,8 @@ else:
     from .services.update_service import UpdateService
     from .ui.main_window import MainWindow
 
-APP_VERSION = "v0.2.1"
+APP_VERSION = "v0.2.2"
+SHOW_CHEAT_FEATURES = True
 
 
 def _write_startup_log(error_text: str) -> Path:
@@ -48,7 +49,11 @@ def main() -> int:
         config_service = ConfigService()
         if UpdateService().check_and_apply_startup_update(APP_VERSION):
             return 0
-        window = MainWindow(config_service=config_service, app_version=APP_VERSION)
+        window = MainWindow(
+            config_service=config_service,
+            app_version=APP_VERSION,
+            show_cheat_features=SHOW_CHEAT_FEATURES,
+        )
         window.show()
         return app.exec()
     except Exception:

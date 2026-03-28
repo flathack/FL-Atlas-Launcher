@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 from app.i18n import Translator
 from app.models.installation import Installation
 from app.services.trade_route_service import TradeRouteLoopRow, TradeRouteService
+from app.ui.trade_route_round_trip_detail_dialog import TradeRouteRoundTripDetailDialog
 
 
 class TradeRouteRoundTripDialog(QDialog):
@@ -31,6 +32,7 @@ class TradeRouteRoundTripDialog(QDialog):
         initial_cargo_capacity: int = 0,
         initial_max_jumps: int = 3,
         initial_leg_count: int = 4,
+        player_reputation: dict[str, float] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -38,9 +40,11 @@ class TradeRouteRoundTripDialog(QDialog):
         self.trade_route_service = trade_route_service
         self.translator = translator
         self._loops: list[TradeRouteLoopRow] = []
+        self._detail_windows: list[TradeRouteRoundTripDetailDialog] = []
         self._initial_cargo_capacity = max(0, int(initial_cargo_capacity))
         self._initial_max_jumps = max(0, int(initial_max_jumps))
         self._initial_leg_count = max(3, min(int(initial_leg_count), 6))
+        self.player_reputation = dict(player_reputation or {})
 
         self.setWindowTitle(self.tr("trade_round_trip_title", name=installation.name))
         self.resize(1180, 700)
@@ -71,6 +75,8 @@ class TradeRouteRoundTripDialog(QDialog):
         self.table.horizontalHeader().setStretchLastSection(True)
         self.summary_label = QLabel()
         self.summary_label.setWordWrap(True)
+        self.hint_label = QLabel(self.tr("trade_round_trip_detail_hint"))
+        self.hint_label.setWordWrap(True)
 
         self.button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
 
@@ -98,6 +104,7 @@ class TradeRouteRoundTripDialog(QDialog):
         root.addLayout(controls)
         root.addWidget(self.table, 1)
         root.addWidget(self.summary_label)
+        root.addWidget(self.hint_label)
         root.addWidget(self.button_box)
 
     def _connect_signals(self) -> None:
@@ -106,6 +113,7 @@ class TradeRouteRoundTripDialog(QDialog):
         self.jump_spin.valueChanged.connect(lambda _value: self._refresh_loops())
         self.leg_spin.valueChanged.connect(lambda _value: self._refresh_loops())
         self.table.currentCellChanged.connect(self._update_summary)
+        self.table.itemDoubleClicked.connect(lambda _item: self._open_detail_dialog())
         self.button_box.rejected.connect(self.close)
 
     def _load_ships(self) -> None:
@@ -126,6 +134,7 @@ class TradeRouteRoundTripDialog(QDialog):
             cargo_capacity=cargo_capacity,
             max_jumps=int(self.jump_spin.value()),
             leg_count=int(self.leg_spin.value()),
+            player_reputation=self.player_reputation,
         )
         self.table.setRowCount(len(self._loops))
         for row_index, loop in enumerate(self._loops):
@@ -168,3 +177,29 @@ class TradeRouteRoundTripDialog(QDialog):
                 profit=f"{loop.total_profit:,}".replace(",", "."),
             )
         )
+
+    def _open_detail_dialog(self) -> None:
+        current_row = self.table.currentRow()
+        if current_row < 0:
+            return
+        item = self.table.item(current_row, 0)
+        loop = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+        if not isinstance(loop, TradeRouteLoopRow):
+            return
+
+        dialog = TradeRouteRoundTripDetailDialog(
+            self.installation,
+            loop,
+            self.trade_route_service,
+            self.translator,
+            parent=self,
+        )
+        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        dialog.destroyed.connect(lambda _obj=None, current=dialog: self._forget_detail_dialog(current))
+        self._detail_windows.append(dialog)
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+
+    def _forget_detail_dialog(self, dialog: TradeRouteRoundTripDetailDialog) -> None:
+        self._detail_windows = [window for window in self._detail_windows if window is not dialog]

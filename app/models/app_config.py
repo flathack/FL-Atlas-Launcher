@@ -12,6 +12,7 @@ class AppConfig:
     language: str = "de"
     cheater_mode: bool = False
     selected_resolution: str = ""
+    faction_reputations: dict[str, dict[str, float]] = field(default_factory=dict)
     installations: list[Installation] = field(default_factory=list)
     mpid_profiles: list[MpidProfile] = field(default_factory=list)
     mpid_sync_path: str = ""
@@ -22,6 +23,7 @@ class AppConfig:
             "language": self.language,
             "cheater_mode": self.cheater_mode,
             "selected_resolution": self.selected_resolution,
+            "faction_reputations": self.faction_reputations,
             "installations": [installation.to_dict() for installation in self.installations],
             "mpid_profiles": [profile.to_dict() for profile in self.mpid_profiles],
             "mpid_sync_path": self.mpid_sync_path,
@@ -39,11 +41,25 @@ class AppConfig:
             for item in data.get("mpid_profiles", [])
             if isinstance(item, dict)
         ]
+        faction_reputations: dict[str, dict[str, float]] = {}
+        raw_faction_reputations = data.get("faction_reputations", {})
+        if isinstance(raw_faction_reputations, dict):
+            for installation_id, values in raw_faction_reputations.items():
+                if not isinstance(values, dict):
+                    continue
+                normalized_values: dict[str, float] = {}
+                for nickname, reputation in values.items():
+                    try:
+                        normalized_values[str(nickname).strip().lower()] = max(-1.0, min(1.0, float(reputation)))
+                    except (TypeError, ValueError):
+                        continue
+                faction_reputations[str(installation_id).strip()] = normalized_values
         return cls(
             theme=data.get("theme", "system"),
             language=data.get("language", "de"),
             cheater_mode=bool(data.get("cheater_mode", False)),
             selected_resolution=data.get("selected_resolution", ""),
+            faction_reputations=faction_reputations,
             installations=installations,
             mpid_profiles=mpid_profiles,
             mpid_sync_path=str(data.get("mpid_sync_path", "")).strip(),

@@ -30,12 +30,15 @@ class TradeRouteDialog(QDialog):
         installation: Installation,
         trade_route_service: TradeRouteService,
         translator: Translator,
+        *,
+        player_reputation: dict[str, float] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.installation = installation
         self.trade_route_service = trade_route_service
         self.translator = translator
+        self.player_reputation = dict(player_reputation or {})
         self._routes: list[TradeRouteRow] = []
         self._preview_windows: list[TradeRoutePreviewDialog] = []
 
@@ -116,6 +119,7 @@ class TradeRouteDialog(QDialog):
             self.installation,
             cargo_capacity=cargo_capacity,
             max_jumps=int(self.jump_spin.value()),
+            player_reputation=self.player_reputation,
         )
         self.table.setRowCount(len(self._routes))
         eye_icon = self._build_eye_icon()
