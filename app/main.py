@@ -20,7 +20,7 @@ else:
     from .ui.main_window import MainWindow
 
 APP_VERSION = "v0.2.2"
-SHOW_CHEAT_FEATURES = False
+SHOW_CHEAT_FEATURES = True
 
 
 def _write_startup_log(error_text: str) -> Path:
