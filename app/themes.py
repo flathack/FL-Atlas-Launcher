@@ -1,0 +1,402 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from PySide6.QtGui import QColor, QPalette
+
+
+@dataclass(frozen=True, slots=True)
+class ThemeColors:
+    window: str
+    window_text: str
+    base: str
+    alternate_base: str
+    text: str
+    button: str
+    button_text: str
+    highlight: str
+    highlight_text: str
+    placeholder_text: str
+    link: str
+    subline: str
+    toolbar_bg: str
+    border: str
+    item_selected: str
+    item_selected_border: str
+    item_hover: str
+    primary_button: str
+    primary_button_text: str
+    secondary_button: str
+    secondary_button_border: str
+    secondary_button_text: str
+    danger_button: str
+    danger_button_text: str
+    danger_button_hover: str
+    disabled_button: str
+    disabled_button_text: str
+    hint_text: str
+
+
+THEMES: dict[str, ThemeColors] = {
+    "dark_blue": ThemeColors(
+        window="#101726",
+        window_text="#e8eefc",
+        base="#162033",
+        alternate_base="#1d2c47",
+        text="#e8eefc",
+        button="#21314f",
+        button_text="#e8eefc",
+        highlight="#25406f",
+        highlight_text="#e8eefc",
+        placeholder_text="#6b7a94",
+        link="#4a9eff",
+        subline="#b6c3dc",
+        toolbar_bg="#162033",
+        border="#294066",
+        item_selected="#25406f",
+        item_selected_border="#4a78bf",
+        item_hover="#1d2c47",
+        primary_button="#1f5fbf",
+        primary_button_text="#f7fbff",
+        secondary_button="#1c2940",
+        secondary_button_border="#33496f",
+        secondary_button_text="#d7e2f6",
+        danger_button="#7d2b37",
+        danger_button_text="#fff2f4",
+        danger_button_hover="#9a3545",
+        disabled_button="#42506b",
+        disabled_button_text="#95a3bb",
+        hint_text="#94a3b8",
+    ),
+    "red": ThemeColors(
+        window="#1a0d0d",
+        window_text="#f5e0e0",
+        base="#241212",
+        alternate_base="#2e1a1a",
+        text="#f5e0e0",
+        button="#3a1e1e",
+        button_text="#f5e0e0",
+        highlight="#5c2020",
+        highlight_text="#f5e0e0",
+        placeholder_text="#8a6060",
+        link="#ff6b6b",
+        subline="#c4a0a0",
+        toolbar_bg="#241212",
+        border="#5c2828",
+        item_selected="#5c2020",
+        item_selected_border="#a04040",
+        item_hover="#2e1a1a",
+        primary_button="#8b2020",
+        primary_button_text="#fff0f0",
+        secondary_button="#2a1414",
+        secondary_button_border="#5c2828",
+        secondary_button_text="#e0c0c0",
+        danger_button="#7d2b37",
+        danger_button_text="#fff2f4",
+        danger_button_hover="#9a3545",
+        disabled_button="#4a3030",
+        disabled_button_text="#8a7070",
+        hint_text="#a07070",
+    ),
+    "yellow": ThemeColors(
+        window="#1a1708",
+        window_text="#f5f0d0",
+        base="#24200e",
+        alternate_base="#2e2814",
+        text="#f5f0d0",
+        button="#3a3418",
+        button_text="#f5f0d0",
+        highlight="#5c5010",
+        highlight_text="#f5f0d0",
+        placeholder_text="#8a8050",
+        link="#f0c040",
+        subline="#c4b880",
+        toolbar_bg="#24200e",
+        border="#5c5020",
+        item_selected="#5c5010",
+        item_selected_border="#a09020",
+        item_hover="#2e2814",
+        primary_button="#8b7a10",
+        primary_button_text="#fff8e0",
+        secondary_button="#2a2610",
+        secondary_button_border="#5c5020",
+        secondary_button_text="#e0d8a0",
+        danger_button="#7d2b37",
+        danger_button_text="#fff2f4",
+        danger_button_hover="#9a3545",
+        disabled_button="#4a4428",
+        disabled_button_text="#8a8060",
+        hint_text="#a09060",
+    ),
+    "black": ThemeColors(
+        window="#0a0a0a",
+        window_text="#d4d4d4",
+        base="#141414",
+        alternate_base="#1c1c1c",
+        text="#d4d4d4",
+        button="#262626",
+        button_text="#d4d4d4",
+        highlight="#3a3a3a",
+        highlight_text="#e0e0e0",
+        placeholder_text="#666666",
+        link="#808080",
+        subline="#999999",
+        toolbar_bg="#141414",
+        border="#333333",
+        item_selected="#3a3a3a",
+        item_selected_border="#555555",
+        item_hover="#1c1c1c",
+        primary_button="#444444",
+        primary_button_text="#e8e8e8",
+        secondary_button="#1e1e1e",
+        secondary_button_border="#404040",
+        secondary_button_text="#b0b0b0",
+        danger_button="#5a1a1a",
+        danger_button_text="#f0d0d0",
+        danger_button_hover="#6a2a2a",
+        disabled_button="#2e2e2e",
+        disabled_button_text="#606060",
+        hint_text="#777777",
+    ),
+    "light": ThemeColors(
+        window="#f0f2f5",
+        window_text="#1a1a2e",
+        base="#ffffff",
+        alternate_base="#e8ecf0",
+        text="#1a1a2e",
+        button="#dce0e8",
+        button_text="#1a1a2e",
+        highlight="#4a90d9",
+        highlight_text="#ffffff",
+        placeholder_text="#8890a0",
+        link="#2060c0",
+        subline="#5a6070",
+        toolbar_bg="#e0e4ea",
+        border="#c0c8d4",
+        item_selected="#4a90d9",
+        item_selected_border="#2070cc",
+        item_hover="#e8ecf0",
+        primary_button="#2070cc",
+        primary_button_text="#ffffff",
+        secondary_button="#e4e8f0",
+        secondary_button_border="#b8c0d0",
+        secondary_button_text="#3a4050",
+        danger_button="#cc3030",
+        danger_button_text="#ffffff",
+        danger_button_hover="#dd4040",
+        disabled_button="#c8ccd4",
+        disabled_button_text="#8890a0",
+        hint_text="#7080a0",
+    ),
+    "green": ThemeColors(
+        window="#0c1a10",
+        window_text="#d8f0dc",
+        base="#102418",
+        alternate_base="#182e1e",
+        text="#d8f0dc",
+        button="#1e3a24",
+        button_text="#d8f0dc",
+        highlight="#1a5c28",
+        highlight_text="#d8f0dc",
+        placeholder_text="#5a8a60",
+        link="#40c060",
+        subline="#90c4a0",
+        toolbar_bg="#102418",
+        border="#285c30",
+        item_selected="#1a5c28",
+        item_selected_border="#30a040",
+        item_hover="#182e1e",
+        primary_button="#1a7a2a",
+        primary_button_text="#f0fff0",
+        secondary_button="#142a18",
+        secondary_button_border="#285c30",
+        secondary_button_text="#a0d8a8",
+        danger_button="#7d2b37",
+        danger_button_text="#fff2f4",
+        danger_button_hover="#9a3545",
+        disabled_button="#2a4a30",
+        disabled_button_text="#608068",
+        hint_text="#608a68",
+    ),
+}
+
+THEME_DISPLAY_NAMES: dict[str, dict[str, str]] = {
+    "dark_blue": {"de": "Dunkelblau", "en": "Dark Blue"},
+    "red": {"de": "Rot", "en": "Red"},
+    "yellow": {"de": "Gelb", "en": "Yellow"},
+    "black": {"de": "Schwarz", "en": "Black"},
+    "light": {"de": "Hell", "en": "Light"},
+    "green": {"de": "Grün", "en": "Green"},
+}
+
+
+def build_palette(theme_id: str) -> QPalette:
+    colors = THEMES.get(theme_id, THEMES["dark_blue"])
+    palette = QPalette()
+    palette.setColor(QPalette.ColorRole.Window, QColor(colors.window))
+    palette.setColor(QPalette.ColorRole.WindowText, QColor(colors.window_text))
+    palette.setColor(QPalette.ColorRole.Base, QColor(colors.base))
+    palette.setColor(QPalette.ColorRole.AlternateBase, QColor(colors.alternate_base))
+    palette.setColor(QPalette.ColorRole.ToolTipBase, QColor(colors.base))
+    palette.setColor(QPalette.ColorRole.ToolTipText, QColor(colors.text))
+    palette.setColor(QPalette.ColorRole.Text, QColor(colors.text))
+    palette.setColor(QPalette.ColorRole.Button, QColor(colors.button))
+    palette.setColor(QPalette.ColorRole.ButtonText, QColor(colors.button_text))
+    palette.setColor(QPalette.ColorRole.BrightText, QColor("#ffffff"))
+    palette.setColor(QPalette.ColorRole.Highlight, QColor(colors.highlight))
+    palette.setColor(QPalette.ColorRole.HighlightedText, QColor(colors.highlight_text))
+    palette.setColor(QPalette.ColorRole.PlaceholderText, QColor(colors.placeholder_text))
+    palette.setColor(QPalette.ColorRole.Link, QColor(colors.link))
+    return palette
+
+
+def build_stylesheet(theme_id: str) -> str:
+    c = THEMES.get(theme_id, THEMES["dark_blue"])
+    return f"""
+QMainWindow {{
+  background-color: {c.window};
+}}
+
+QDialog,
+QMessageBox,
+QMenu,
+QWidget#qt_scrollarea_viewport {{
+  background-color: {c.window};
+}}
+
+QWidget {{
+  color: {c.text};
+  font-family: "Segoe UI";
+  font-size: 10pt;
+}}
+
+QLabel#headline {{
+  font-size: 20pt;
+  font-weight: 700;
+}}
+
+QLabel#subline {{
+  color: {c.subline};
+}}
+
+QToolBar {{
+  background: {c.toolbar_bg};
+  border: 0;
+  spacing: 8px;
+  padding: 8px 12px;
+}}
+
+QToolButton {{
+  background: {c.button};
+  border: 1px solid {c.border};
+  border-radius: 8px;
+  padding: 8px 12px;
+}}
+
+QToolButton:hover,
+QPushButton:hover {{
+  background: {c.item_hover};
+}}
+
+QListWidget,
+QListView,
+QTreeView,
+QTableView,
+QLineEdit,
+QComboBox {{
+  background: {c.base};
+  border: 1px solid {c.border};
+  border-radius: 10px;
+  padding: 8px;
+}}
+
+QComboBox QAbstractItemView,
+QAbstractItemView {{
+  background: {c.base};
+  color: {c.text};
+  border: 1px solid {c.border};
+  selection-background-color: {c.highlight};
+  selection-color: {c.highlight_text};
+}}
+
+QComboBox::drop-down {{
+  border: 0;
+  padding-right: 6px;
+}}
+
+QComboBox::down-arrow {{
+  width: 10px;
+  height: 10px;
+}}
+
+QListWidget::item {{
+  border-radius: 8px;
+  padding: 12px;
+  margin: 4px;
+}}
+
+QListWidget::item:selected {{
+  background: {c.item_selected};
+  border: 1px solid {c.item_selected_border};
+}}
+
+QListWidget::item:hover {{
+  background: {c.item_hover};
+}}
+
+QPushButton {{
+  background: {c.primary_button};
+  color: {c.primary_button_text};
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-weight: 600;
+}}
+
+QPushButton[variant="secondary"] {{
+  background: {c.secondary_button};
+  border: 1px solid {c.secondary_button_border};
+  color: {c.secondary_button_text};
+}}
+
+QPushButton[variant="secondary"]:hover {{
+  background: {c.item_hover};
+}}
+
+QPushButton[variant="danger"] {{
+  background: {c.danger_button};
+  color: {c.danger_button_text};
+}}
+
+QPushButton[variant="danger"]:hover {{
+  background: {c.danger_button_hover};
+}}
+
+QPushButton:disabled {{
+  background: {c.disabled_button};
+  color: {c.disabled_button_text};
+}}
+
+QStatusBar {{
+  background: {c.toolbar_bg};
+}}
+
+QStatusBar::item {{
+  border: 0;
+}}
+
+QMenu {{
+  border: 1px solid {c.border};
+  padding: 6px;
+}}
+
+QMenu::item {{
+  background: transparent;
+  border-radius: 6px;
+  padding: 8px 12px;
+}}
+
+QMenu::item:selected {{
+  background: {c.highlight};
+}}
+"""

@@ -95,13 +95,12 @@ class CheatService:
         raise FileNotFoundError("Could not resolve the Freelancer game root from the executable path.")
 
     def get_cruise_charge_time(self, installation: Installation) -> float | None:
-        constants_path = self._constants_ini_path(installation)
-        if not constants_path.exists():
+        engine_path = self._engine_equip_path(installation)
+        if not engine_path.exists():
             return None
-
-        document = self._read_text_document(constants_path)
+        document = self._read_text_document(engine_path)
         match = re.search(
-            rf"^\s*{re.escape(CRUISE_CHARGE_KEY)}\s*=\s*([^\r\n;#]+)",
+            r"^\s*cruise_charge_time\s*=\s*([^\r\n;#]+)",
             document.text,
             flags=re.IGNORECASE | re.MULTILINE,
         )
@@ -113,18 +112,43 @@ class CheatService:
             return None
 
     def set_cruise_charge_time(self, installation: Installation, value: float) -> float:
-        constants_path = self._constants_ini_path(installation)
-        document = self._read_text_document(constants_path)
-        updated_text, changed = self._set_value_in_section(
-            document.text,
-            section_name="EngineEquipConsts",
-            key=CRUISE_CHARGE_KEY,
-            value=self._format_float(value),
-        )
+        engine_path = self._engine_equip_path(installation)
+        document = self._read_text_document(engine_path)
+        formatted = self._format_float(value)
+        lines = document.text.splitlines()
+        newline = self._detect_newline(document.text)
+        trailing = document.text.endswith(("\r\n", "\n", "\r"))
+        changed = False
+        result_lines: list[str] = []
+        for line in lines:
+            stripped = line.strip().lower()
+            # Remove cruise_start_sound lines
+            if stripped.startswith("cruise_start_sound"):
+                if "=" in stripped:
+                    changed = True
+                    continue
+            # Replace cruise_charge_time values
+            if stripped.startswith("cruise_charge_time") and "=" in stripped:
+                new_line = self._replace_assignment_value(line, formatted)
+                if new_line != line:
+                    changed = True
+                result_lines.append(new_line)
+                continue
+            # Set reverse_fraction to 1
+            if stripped.startswith("reverse_fraction") and "=" in stripped:
+                new_line = self._replace_assignment_value(line, "1")
+                if new_line != line:
+                    changed = True
+                result_lines.append(new_line)
+                continue
+            result_lines.append(line)
         if not changed:
             return value
-        self._backup_files(installation, "cruise_charge", [constants_path])
-        self._write_text_document(constants_path, document, updated_text)
+        updated_text = newline.join(result_lines)
+        if trailing:
+            updated_text += newline
+        self._backup_files(installation, "cruise_charge", [engine_path])
+        self._write_text_document(engine_path, document, updated_text)
         return value
 
     def reset_cruise_charge_time(self, installation: Installation) -> bool:
@@ -446,6 +470,9 @@ class CheatService:
 
     def _constants_ini_path(self, installation: Installation) -> Path:
         return self.resolve_game_root(installation) / "DATA" / "constants.ini"
+
+    def _engine_equip_path(self, installation: Installation) -> Path:
+        return self.resolve_game_root(installation) / "DATA" / "EQUIPMENT" / "engine_equip.ini"
 
     def _jump_effect_path(self, installation: Installation) -> Path:
         return self.resolve_game_root(installation) / "DATA" / "FX" / "jumpeffect.ini"

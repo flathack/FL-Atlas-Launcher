@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import json
 from pathlib import Path
 import sys
 import traceback
@@ -19,7 +20,7 @@ else:
     from .services.update_service import UpdateService
     from .ui.main_window import MainWindow
 
-APP_VERSION = "v0.2.2"
+APP_VERSION = "v0.3.0"
 SHOW_CHEAT_FEATURES = True
 
 
@@ -43,9 +44,29 @@ def _show_startup_error(message: str, log_path: Path) -> None:
     dialog.exec()
 
 
+def _read_theme_before_app() -> str:
+    """Read theme from config without QApplication (avoids QStandardPaths)."""
+    config_path = Path.home() / ".fl-atlas-launcher" / "config.json"
+    if not config_path.exists():
+        # Try the Roaming AppData path Qt would use
+        appdata = Path.home() / "AppData" / "Roaming" / "FL Atlas" / "FL Atlas Launcher" / "config.json"
+        if appdata.exists():
+            config_path = appdata
+    if config_path.exists():
+        try:
+            data = json.loads(config_path.read_text(encoding="utf-8"))
+            theme = data.get("theme", "dark_blue")
+            if isinstance(theme, str) and theme:
+                return theme
+        except (json.JSONDecodeError, OSError):
+            pass
+    return "dark_blue"
+
+
 def main() -> int:
     try:
-        app = create_application()
+        theme = _read_theme_before_app()
+        app = create_application(theme)
         config_service = ConfigService()
         if UpdateService().check_and_apply_startup_update(APP_VERSION):
             return 0

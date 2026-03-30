@@ -140,14 +140,6 @@ class MainWindow(QMainWindow):
         self.process_timer.start()
 
     def _build_ui(self) -> None:
-        self.language_combo = QComboBox()
-        self.language_combo.addItem(self.tr("language_de"), "de")
-        self.language_combo.addItem(self.tr("language_en"), "en")
-        self.language_combo.setCurrentIndex(max(0, self.language_combo.findData(self.config.language)))
-        self.language_combo.setMinimumWidth(90)
-        self.language_combo.setMaximumWidth(110)
-        self.language_combo.setToolTip(self.tr("language"))
-        self.language_combo.activated.connect(lambda _index: self._change_language())
         self.sync_status_dot = QLabel(chr(0x25CF))
         self.sync_status_dot.setToolTip(self.tr("sync_status"))
         self.sync_status_label = QLabel()
@@ -175,7 +167,7 @@ class MainWindow(QMainWindow):
         toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
         self.addToolBar(toolbar)
 
-        settings_action = QAction(self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView), self.tr("manage_installations"), self)
+        settings_action = QAction(self.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon), self.tr("manage_installations"), self)
         settings_action.setToolTip(self.tr("manage_installations"))
         settings_action.triggered.connect(self._open_settings)
         toolbar.addAction(settings_action)
@@ -185,10 +177,6 @@ class MainWindow(QMainWindow):
         mpid_action.triggered.connect(self._open_mpid_dialog)
         toolbar.addAction(mpid_action)
 
-        refresh_action = QAction(self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload), self.tr("refresh"), self)
-        refresh_action.setToolTip(self.tr("refresh"))
-        refresh_action.triggered.connect(self._refresh_view)
-        toolbar.addAction(refresh_action)
         ship_info_icon_path = resource_path("resources", "icons", "fl_atlas_launcher_icon.svg")
         ship_info_icon = QIcon(str(ship_info_icon_path)) if ship_info_icon_path.exists() else self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogInfoView)
         self.ship_info_action = QAction(ship_info_icon, self.tr("ship_info_open"), self)
@@ -211,8 +199,6 @@ class MainWindow(QMainWindow):
         self.round_trip_action.triggered.connect(self._open_round_trip_dialog)
         toolbar.addAction(self.round_trip_action)
         toolbar.addSeparator()
-        toolbar.addWidget(self.language_combo)
-        toolbar.addSeparator()
         toolbar.addWidget(self.sync_status_dot)
         toolbar.addWidget(self.sync_status_label)
         if self.show_cheat_features:
@@ -222,6 +208,11 @@ class MainWindow(QMainWindow):
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         toolbar.addWidget(spacer)
+
+        refresh_action = QAction(self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload), self.tr("refresh"), self)
+        refresh_action.setToolTip(self.tr("refresh"))
+        refresh_action.triggered.connect(self._refresh_view)
+        toolbar.addAction(refresh_action)
         toolbar.addWidget(self.help_button)
 
         root = QWidget()
@@ -277,11 +268,6 @@ class MainWindow(QMainWindow):
         hint_label = QLabel(self.tr("cheat_panel_hint"))
         hint_label.setWordWrap(True)
         hint_label.setStyleSheet("color: #94a3b8;")
-        self.bini_hint_label = QLabel(self.tr("bini_convert_hint"))
-        self.bini_hint_label.setWordWrap(True)
-        self.bini_hint_label.setStyleSheet("color: #94a3b8;")
-
-        self.bini_toggle = QCheckBox(self.tr("bini_convert"))
 
         # --- Cruise Charge row ---
         self.cruise_charge_value_label = QLabel()
@@ -313,17 +299,7 @@ class MainWindow(QMainWindow):
 
         # --- Ship Handling buttons ---
         self.ship_handling_button = QPushButton(self.tr("ship_handling_open"))
-        self.ship_handling_reset_button = QPushButton(self.tr("ship_handling_reset_sidebar"))
         self.ship_handling_button.setMinimumHeight(34)
-        self.ship_handling_reset_button.setMinimumHeight(34)
-
-        # --- BINI section ---
-        self.bini_section = self._build_cheat_section()
-        bini_layout = QVBoxLayout(self.bini_section)
-        bini_layout.setContentsMargins(12, 12, 12, 12)
-        bini_layout.setSpacing(8)
-        bini_layout.addWidget(self.bini_toggle)
-        bini_layout.addWidget(self.bini_hint_label)
 
         # --- Compact cheat grid: one row per cheat ---
         cheats_section = self._build_cheat_section()
@@ -366,7 +342,6 @@ class MainWindow(QMainWindow):
         tools_header.setStyleSheet("font-weight: 600;")
         tools_layout.addWidget(tools_header)
         tools_layout.addWidget(self.ship_handling_button)
-        tools_layout.addWidget(self.ship_handling_reset_button)
 
         self.mod_controls_widget = QWidget()
         mod_layout = QVBoxLayout(self.mod_controls_widget)
@@ -378,7 +353,6 @@ class MainWindow(QMainWindow):
         layout.addWidget(title_label)
         layout.addWidget(self.cheat_installation_label)
         layout.addWidget(hint_label)
-        layout.addWidget(self.bini_section)
         layout.addWidget(self.mod_controls_widget)
         layout.addStretch(1)
         return panel
@@ -415,14 +389,12 @@ class MainWindow(QMainWindow):
         self.resolution_combo.currentTextChanged.connect(self._save_selected_resolution)
         if self.show_cheat_features:
             self.cheater_mode_switch.toggled.connect(self._toggle_cheater_mode)
-            self.bini_toggle.toggled.connect(self._toggle_bini_conversion)
             self.cruise_charge_slider.valueChanged.connect(self._apply_cruise_charge_time)
             self.cruise_disrupt_slider.valueChanged.connect(self._apply_cruise_disrupt_time)
             self.jump_timing_toggle.toggled.connect(self._toggle_jump_timing)
             self.jump_timing_slider.valueChanged.connect(self._apply_jump_timing)
             self.reveal_toggle.toggled.connect(self._toggle_reveal_everything)
             self.ship_handling_button.clicked.connect(self._open_ship_handling_dialog)
-            self.ship_handling_reset_button.clicked.connect(self._reset_ship_handling)
         if not self._persistent_signals_connected:
             self.sync_timer.timeout.connect(lambda: self._refresh_sync_state(trigger_sync=False))
             self.process_timer.timeout.connect(self._refresh_process_state)
@@ -539,12 +511,33 @@ class MainWindow(QMainWindow):
         )
 
     def _open_settings(self) -> None:
-        dialog = SettingsDialog(self.config.installations, self.translator, self)
+        dialog = SettingsDialog(
+            self.config.installations,
+            self.translator,
+            self.config.language,
+            self.config.theme,
+            self,
+        )
         if dialog.exec():
             self.config.installations = dialog.installations
+            language_changed = dialog.selected_language != self.config.language
+            theme_changed = dialog.selected_theme != self.config.theme
+            if language_changed:
+                self.config.language = dialog.selected_language
+                self.translator.set_language(self.config.language)
+            if theme_changed:
+                self.config.theme = dialog.selected_theme
+                from app.bootstrap import apply_theme
+                from PySide6.QtWidgets import QApplication
+                app = QApplication.instance()
+                if app is not None:
+                    apply_theme(app, self.config.theme)
             self._persist_config()
-            self._populate_installations()
-            self._refresh_process_state()
+            if language_changed or theme_changed:
+                self._rebuild_translated_ui()
+            else:
+                self._populate_installations()
+                self._refresh_process_state()
             self.statusBar().showMessage(self.tr("installations_saved"), 4000)
 
     def _open_mpid_dialog(self) -> None:
@@ -673,16 +666,6 @@ class MainWindow(QMainWindow):
         self.config.last_installation_id = installation.id
         self._persist_config()
         self._refresh_process_state()
-
-    def _change_language(self) -> None:
-        language = self.language_combo.currentData()
-        if not language or language == self.config.language:
-            return
-
-        self.config.language = str(language)
-        self.translator.set_language(self.config.language)
-        self._persist_config()
-        self._rebuild_translated_ui()
 
     def _rebuild_translated_ui(self) -> None:
         self.setWindowTitle(self.tr("app_title", version=self.app_version))
@@ -872,7 +855,6 @@ class MainWindow(QMainWindow):
     def _update_cheat_panel_state(self, has_installation: bool) -> None:
         if not self.show_cheat_features:
             return
-        self.bini_toggle.setEnabled(has_installation)
         self.mod_controls_widget.setEnabled(has_installation)
 
     def _sync_cheat_panel_to_installation(self) -> None:
@@ -892,11 +874,7 @@ class MainWindow(QMainWindow):
             self.jump_timing_value_label.setText(self.tr("jump_timing_value", value="0.1"))
             self.jump_timing_slider.setValue(1)
             self.jump_timing_slider.setEnabled(False)
-            self.bini_toggle.setChecked(False)
-            self.bini_toggle.setEnabled(False)
             self.reveal_toggle.setChecked(False)
-            self.bini_hint_label.setVisible(True)
-            self.bini_section.setVisible(False)
             self.mod_controls_widget.setVisible(False)
             self._is_loading_cheat_controls = False
             self._update_cheat_panel_visibility()
@@ -909,18 +887,19 @@ class MainWindow(QMainWindow):
         )
         try:
             cheat_service = self._get_cheat_service()
+            bini_pending = cheat_service.has_unconverted_bini_files(installation)
+            if bini_pending:
+                cheat_service.convert_bini_files(installation)
             cruise_charge = cheat_service.get_cruise_charge_time(installation)
             cruise_disrupt = cheat_service.get_cruise_disrupt_time(installation)
             jump_timing = cheat_service.get_jump_timing_value(installation)
             jump_timing_enabled = cheat_service.has_backup(installation, "jump_timing")
-            bini_pending = cheat_service.has_unconverted_bini_files(installation)
             reveal_enabled = cheat_service.has_backup(installation, "reveal_everything")
         except OSError:
             cruise_charge = None
             cruise_disrupt = None
             jump_timing = None
             jump_timing_enabled = False
-            bini_pending = True
             reveal_enabled = False
 
         slider_value = max(1, min(50, int(round((cruise_charge if cruise_charge is not None else 0.1) * 10))))
@@ -940,11 +919,7 @@ class MainWindow(QMainWindow):
         self.jump_timing_value_label.setText(
             self.tr("jump_timing_value", value=f"{jump_slider_value / 10:.1f}")
         )
-        self.bini_toggle.setChecked(not bini_pending)
-        self.bini_toggle.setEnabled(bini_pending)
-        self.bini_hint_label.setVisible(bini_pending)
-        self.bini_section.setVisible(True)
-        self.mod_controls_widget.setVisible(not bini_pending)
+        self.mod_controls_widget.setVisible(True)
         self.reveal_toggle.setChecked(reveal_enabled)
         self._is_loading_cheat_controls = False
         self._update_cheat_panel_visibility()
@@ -1021,32 +996,49 @@ class MainWindow(QMainWindow):
             return str(Path(exe_path).expanduser()).lower()
 
     def _with_cheat_glow(self, icon: QIcon) -> QIcon:
-        pixmap = icon.pixmap(QSize(64, 64))
+        size = QSize(48, 48)
+        pixmap = icon.pixmap(size)
+        if pixmap.size() != size:
+            pixmap = pixmap.scaled(size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            padded = pixmap.__class__(size)
+            padded.fill(QColor(0, 0, 0, 0))
+            p = QPainter(padded)
+            x = (size.width() - pixmap.width()) // 2
+            y = (size.height() - pixmap.height()) // 2
+            p.drawPixmap(x, y, pixmap)
+            p.end()
+            pixmap = padded
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        # Red border
-        pen = QPen(QColor(220, 38, 38), 4)
-        painter.setPen(pen)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawRoundedRect(2, 2, 60, 60, 6, 6)
         # Skull badge in bottom-right corner
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(220, 38, 38))
-        painter.drawEllipse(42, 42, 22, 22)
-        skull_font = QFont("Segoe UI Emoji", 12)
+        painter.drawEllipse(30, 30, 18, 18)
+        skull_font = QFont("Segoe UI Emoji", 9)
         painter.setFont(skull_font)
         painter.setPen(QColor(255, 255, 255))
-        painter.drawText(44, 44, 20, 20, Qt.AlignmentFlag.AlignCenter, "\u2620")
+        painter.drawText(30, 30, 18, 18, Qt.AlignmentFlag.AlignCenter, "\u2620")
         painter.end()
         return QIcon(pixmap)
 
     def _with_running_badge(self, icon: QIcon) -> QIcon:
-        pixmap = icon.pixmap(QSize(64, 64))
+        size = QSize(48, 48)
+        pixmap = icon.pixmap(size)
+        if pixmap.size() != size:
+            pixmap = pixmap.scaled(size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            padded = pixmap.__class__(size)
+            padded.fill(QColor(0, 0, 0, 0))
+            p = QPainter(padded)
+            x = (size.width() - pixmap.width()) // 2
+            y = (size.height() - pixmap.height()) // 2
+            p.drawPixmap(x, y, pixmap)
+            p.end()
+            pixmap = padded
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.setBrush(QColor("#39d353"))
-        painter.setPen(QPen(QColor("#f8fafc"), 3))
-        painter.drawEllipse(42, 42, 18, 18)
+        painter.setPen(QPen(QColor("#f8fafc"), 2))
+        painter.drawEllipse(32, 32, 14, 14)
         painter.end()
         return QIcon(pixmap)
 
@@ -1111,31 +1103,6 @@ class MainWindow(QMainWindow):
             self.tr("process_stop_status", name=installation.name, count=stopped),
             5000,
         )
-
-    def _toggle_bini_conversion(self, checked: bool) -> None:
-        if self._is_loading_cheat_controls or not checked:
-            return
-        installation = self._current_installation()
-        if installation is None:
-            return
-        try:
-            result = self._get_cheat_service().convert_bini_files(installation)
-        except (OSError, ValueError) as error:
-            self._is_loading_cheat_controls = True
-            self.bini_toggle.setChecked(False)
-            self._is_loading_cheat_controls = False
-            QMessageBox.critical(
-                self,
-                self.tr("bini_convert_done_title"),
-                self.tr("mod_file_missing_message", error=error),
-            )
-            return
-        QMessageBox.information(
-            self,
-            self.tr("bini_convert_done_title"),
-            self.tr("bini_convert_done_message", converted=result.converted),
-        )
-        self._sync_cheat_panel_to_installation()
 
     def _apply_cruise_charge_time(self, slider_value: int) -> None:
         self.cruise_charge_value_label.setText(

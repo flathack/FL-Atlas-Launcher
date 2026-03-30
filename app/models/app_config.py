@@ -8,7 +8,7 @@ from .mpid_profile import MpidProfile
 
 @dataclass(slots=True)
 class AppConfig:
-    theme: str = "system"
+    theme: str = "dark_blue"
     language: str = "de"
     cheater_mode: bool = False
     selected_resolution: str = ""
@@ -57,7 +57,7 @@ class AppConfig:
                         continue
                 faction_reputations[str(installation_id).strip()] = normalized_values
         return cls(
-            theme=data.get("theme", "system"),
+            theme=data.get("theme", "dark_blue"),
             language=data.get("language", "de"),
             cheater_mode=bool(data.get("cheater_mode", False)),
             selected_resolution=data.get("selected_resolution", ""),

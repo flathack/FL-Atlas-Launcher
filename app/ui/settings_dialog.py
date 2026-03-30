@@ -6,6 +6,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -18,6 +19,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSplitter,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -25,6 +27,7 @@ from PySide6.QtWidgets import (
 from app.i18n import Translator
 from app.models.installation import Installation
 from app.services.ini_service import IniService
+from app.themes import THEMES, THEME_DISPLAY_NAMES
 
 
 class SettingsDialog(QDialog):
@@ -32,16 +35,20 @@ class SettingsDialog(QDialog):
         self,
         installations: list[Installation],
         translator: Translator,
+        current_language: str = "de",
+        current_theme: str = "dark_blue",
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.translator = translator
         self.setWindowTitle(self.tr("settings_title"))
-        self.resize(760, 420)
+        self.resize(760, 480)
 
         self._installations = deepcopy(installations)
         self._is_loading = False
         self.ini_service = IniService()
+        self._current_language = current_language
+        self._current_theme = current_theme
 
         self.installation_list = QListWidget()
         self.installation_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -56,6 +63,18 @@ class SettingsDialog(QDialog):
         self.browse_exe_button = QPushButton(self.tr("choose_exe"))
         self.browse_perf_button = QPushButton(self.tr("choose_perf"))
 
+        self.language_combo = QComboBox()
+        self.language_combo.addItem(self.tr("language_de"), "de")
+        self.language_combo.addItem(self.tr("language_en"), "en")
+        self.language_combo.setCurrentIndex(max(0, self.language_combo.findData(self._current_language)))
+
+        self.theme_combo = QComboBox()
+        lang = self._current_language
+        for theme_id in THEMES:
+            display = THEME_DISPLAY_NAMES.get(theme_id, {}).get(lang, theme_id)
+            self.theme_combo.addItem(display, theme_id)
+        self.theme_combo.setCurrentIndex(max(0, self.theme_combo.findData(self._current_theme)))
+
         self.button_box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
@@ -68,10 +87,22 @@ class SettingsDialog(QDialog):
     def installations(self) -> list[Installation]:
         return self._installations
 
+    @property
+    def selected_language(self) -> str:
+        return str(self.language_combo.currentData() or self._current_language)
+
+    @property
+    def selected_theme(self) -> str:
+        return str(self.theme_combo.currentData() or self._current_theme)
+
     def tr(self, key: str, **kwargs: object) -> str:
         return self.translator.text(key, **kwargs)
 
     def _build_ui(self) -> None:
+        tabs = QTabWidget()
+
+        # --- Installations tab ---
+        installations_tab = QWidget()
         list_column = QWidget()
         list_layout = QVBoxLayout(list_column)
         list_layout.addWidget(QLabel(self.tr("freelancer_installations")))
@@ -95,15 +126,30 @@ class SettingsDialog(QDialog):
         )
         editor_layout.addLayout(form_layout)
         editor_layout.addStretch(1)
-        editor_layout.addWidget(self.button_box)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(list_column)
         splitter.addWidget(editor_column)
         splitter.setSizes([280, 480])
 
+        inst_layout = QVBoxLayout(installations_tab)
+        inst_layout.addWidget(splitter)
+
+        tabs.addTab(installations_tab, self.tr("freelancer_installations"))
+
+        # --- General settings tab ---
+        general_tab = QWidget()
+        general_layout = QFormLayout(general_tab)
+        general_layout.setContentsMargins(24, 24, 24, 24)
+        general_layout.setVerticalSpacing(16)
+        general_layout.addRow(self.tr("language"), self.language_combo)
+        general_layout.addRow(self.tr("settings_theme"), self.theme_combo)
+
+        tabs.addTab(general_tab, self.tr("settings_general"))
+
         root_layout = QVBoxLayout(self)
-        root_layout.addWidget(splitter)
+        root_layout.addWidget(tabs)
+        root_layout.addWidget(self.button_box)
 
     def _with_button(self, line_edit: QLineEdit, button: QPushButton) -> QWidget:
         wrapper = QWidget()
