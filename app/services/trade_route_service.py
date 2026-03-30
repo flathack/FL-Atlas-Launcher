@@ -160,6 +160,28 @@ class TradeRouteService:
         rows.sort(key=lambda item: (item.total_profit, item.profit_per_unit, item.source_system), reverse=True)
         return rows
 
+    def best_routes_per_base(
+        self,
+        installation: Installation,
+        *,
+        cargo_capacity: int = 1,
+        max_jumps: int = 1,
+    ) -> dict[str, TradeRouteRow]:
+        """Return the single best outbound route per *buy* base (max 1 jump)."""
+        context = self._build_trade_route_context(installation)
+        candidates = self._candidate_routes(
+            context,
+            cargo_capacity=cargo_capacity,
+            max_jumps=max_jumps,
+        )
+        best: dict[str, TradeRouteRow] = {}
+        for route in candidates:
+            key = route.buy_base_nickname.lower()
+            current = best.get(key)
+            if current is None or route.profit_per_unit > current.profit_per_unit:
+                best[key] = route
+        return best
+
     def best_round_trips(
         self,
         installation: Installation,

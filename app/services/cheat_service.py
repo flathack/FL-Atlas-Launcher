@@ -461,7 +461,7 @@ class CheatService:
         return self._backup_root(installation, mod_name).exists()
 
     def reset_all_mods(self, installation: Installation) -> int:
-        mod_names = ("cruise_charge", "cruise_disrupt", "jump_timing", "reveal_everything", "ship_handling")
+        mod_names = ("cruise_charge", "cruise_disrupt", "jump_timing", "reveal_everything", "ship_handling", "npc_rumors")
         restored = 0
         for mod_name in mod_names:
             if self._restore_backup(installation, mod_name):

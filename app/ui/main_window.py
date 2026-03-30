@@ -43,6 +43,7 @@ from app.services.ini_service import IniService
 from app.services.launcher_service import LauncherService
 from app.services.mpid_service import MpidService
 from app.services.mpid_transfer_service import MpidTransferService
+from app.services.npc_rumor_service import NpcRumorService
 from app.services.process_service import ProcessService
 from app.services.resolution_service import ResolutionService
 from app.services.trade_route_service import TradeRouteService
@@ -94,6 +95,7 @@ class MainWindow(QMainWindow):
         self.process_notifier = ProcessNotifier()
         self._cheat_service: CheatService | None = None
         self._trade_route_service: TradeRouteService | None = None
+        self._npc_rumor_service: NpcRumorService | None = None
         self.launcher_service = LauncherService(
             ini_service=self.ini_service,
             resolution_service=self.resolution_service,
@@ -297,6 +299,9 @@ class MainWindow(QMainWindow):
         # --- Reveal row ---
         self.reveal_toggle = QCheckBox(self.tr("reveal_group"))
 
+        # --- NPC Rumors row ---
+        self.npc_rumor_toggle = QCheckBox(self.tr("npc_rumor_group"))
+
         # --- Ship Handling buttons ---
         self.ship_handling_button = QPushButton(self.tr("ship_handling_open"))
         self.ship_handling_button.setMinimumHeight(34)
@@ -330,6 +335,10 @@ class MainWindow(QMainWindow):
         row += 1
         # Reveal: checkbox spans full row
         grid.addWidget(self.reveal_toggle, row, 0, 1, 3)
+
+        row += 1
+        # NPC Rumors: checkbox spans full row
+        grid.addWidget(self.npc_rumor_toggle, row, 0, 1, 3)
 
         grid.setColumnStretch(1, 1)
 
@@ -379,6 +388,11 @@ class MainWindow(QMainWindow):
             self._trade_route_service = TradeRouteService(self._get_cheat_service())
         return self._trade_route_service
 
+    def _get_npc_rumor_service(self) -> NpcRumorService:
+        if self._npc_rumor_service is None:
+            self._npc_rumor_service = NpcRumorService(self._get_cheat_service())
+        return self._npc_rumor_service
+
     def _connect_signals(self) -> None:
         self.installation_list.currentRowChanged.connect(self._on_installation_changed)
         self.installation_list.itemDoubleClicked.connect(lambda _item: self._launch_selected_installation())
@@ -394,6 +408,7 @@ class MainWindow(QMainWindow):
             self.jump_timing_toggle.toggled.connect(self._toggle_jump_timing)
             self.jump_timing_slider.valueChanged.connect(self._apply_jump_timing)
             self.reveal_toggle.toggled.connect(self._toggle_reveal_everything)
+            self.npc_rumor_toggle.toggled.connect(self._toggle_npc_rumors)
             self.ship_handling_button.clicked.connect(self._open_ship_handling_dialog)
         if not self._persistent_signals_connected:
             self.sync_timer.timeout.connect(lambda: self._refresh_sync_state(trigger_sync=False))
@@ -875,6 +890,7 @@ class MainWindow(QMainWindow):
             self.jump_timing_slider.setValue(1)
             self.jump_timing_slider.setEnabled(False)
             self.reveal_toggle.setChecked(False)
+            self.npc_rumor_toggle.setChecked(False)
             self.mod_controls_widget.setVisible(False)
             self._is_loading_cheat_controls = False
             self._update_cheat_panel_visibility()
@@ -895,12 +911,14 @@ class MainWindow(QMainWindow):
             jump_timing = cheat_service.get_jump_timing_value(installation)
             jump_timing_enabled = cheat_service.has_backup(installation, "jump_timing")
             reveal_enabled = cheat_service.has_backup(installation, "reveal_everything")
+            npc_rumors_enabled = cheat_service.has_backup(installation, "npc_rumors")
         except OSError:
             cruise_charge = None
             cruise_disrupt = None
             jump_timing = None
             jump_timing_enabled = False
             reveal_enabled = False
+            npc_rumors_enabled = False
 
         slider_value = max(1, min(50, int(round((cruise_charge if cruise_charge is not None else 0.1) * 10))))
         self.cruise_charge_slider.setValue(slider_value)
@@ -921,6 +939,7 @@ class MainWindow(QMainWindow):
         )
         self.mod_controls_widget.setVisible(True)
         self.reveal_toggle.setChecked(reveal_enabled)
+        self.npc_rumor_toggle.setChecked(npc_rumors_enabled)
         self._is_loading_cheat_controls = False
         self._update_cheat_panel_visibility()
 
@@ -1238,6 +1257,50 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(
                 self,
                 self.tr("reveal_done_title"),
+                self.tr("mod_file_missing_message", error=error),
+            )
+            return
+
+    def _toggle_npc_rumors(self, checked: bool) -> None:
+        if self._is_loading_cheat_controls:
+            return
+        installation = self._current_installation()
+        if installation is None:
+            return
+        try:
+            if checked:
+                best_routes = self._get_trade_route_service().best_routes_per_base(installation)
+                route_map: dict[str, tuple[str, str, str, str, int]] = {}
+                for nick, row in best_routes.items():
+                    route_map[nick] = (
+                        row.commodity,
+                        row.sell_base,
+                        row.target_system,
+                        row.source_system,
+                        row.profit_per_unit,
+                    )
+                count = self._get_npc_rumor_service().apply_npc_rumors(installation, route_map)
+                self.statusBar().showMessage(
+                    self.tr("npc_rumor_done", count=count),
+                    4000,
+                )
+            else:
+                restored = self._get_npc_rumor_service().reset_npc_rumors(installation)
+                message = self.tr("npc_rumor_reset_done") if restored else self.tr("npc_rumor_reset_missing")
+                self.statusBar().showMessage(message, 4000)
+        except (OSError, ValueError) as error:
+            # If we were applying, ensure any partial state is cleaned up
+            if checked:
+                try:
+                    self._get_npc_rumor_service().reset_npc_rumors(installation)
+                except Exception:
+                    pass
+            self._is_loading_cheat_controls = True
+            self.npc_rumor_toggle.setChecked(not checked)
+            self._is_loading_cheat_controls = False
+            QMessageBox.critical(
+                self,
+                self.tr("npc_rumor_group"),
                 self.tr("mod_file_missing_message", error=error),
             )
             return
