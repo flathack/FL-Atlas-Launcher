@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from datetime import datetime
 import json
 from pathlib import Path
 import subprocess
 import threading
 
 from PySide6.QtCore import QFileInfo, QObject, QSize, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QAction, QColor, QDesktopServices, QIcon, QPainter, QPen
+from PySide6.QtGui import QAction, QBrush, QColor, QDesktopServices, QFont, QIcon, QPainter, QPen, QRadialGradient
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -282,54 +283,81 @@ class MainWindow(QMainWindow):
 
         self.bini_toggle = QCheckBox(self.tr("bini_convert"))
 
-        cruise_label = QLabel(self.tr("cruise_charge_group"))
-        cruise_label.setStyleSheet("font-weight: 600;")
+        # --- Cruise Charge row ---
         self.cruise_charge_value_label = QLabel()
+        self.cruise_charge_value_label.setMinimumWidth(36)
         self.cruise_charge_slider = QSlider(Qt.Orientation.Horizontal)
         self.cruise_charge_slider.setRange(1, 50)
         self.cruise_charge_slider.setSingleStep(1)
         self.cruise_charge_slider.setPageStep(1)
 
-        jump_timing_label = QLabel(self.tr("jump_timing_group"))
-        jump_timing_label.setStyleSheet("font-weight: 600;")
-        self.jump_timing_toggle = QCheckBox(self.tr("jump_timing_enable"))
+        # --- Cruise Disrupt row ---
+        self.cruise_disrupt_value_label = QLabel()
+        self.cruise_disrupt_value_label.setMinimumWidth(36)
+        self.cruise_disrupt_slider = QSlider(Qt.Orientation.Horizontal)
+        self.cruise_disrupt_slider.setRange(1, 50)
+        self.cruise_disrupt_slider.setSingleStep(1)
+        self.cruise_disrupt_slider.setPageStep(1)
+
+        # --- Jump Timing row ---
+        self.jump_timing_toggle = QCheckBox()
         self.jump_timing_value_label = QLabel()
+        self.jump_timing_value_label.setMinimumWidth(36)
         self.jump_timing_slider = QSlider(Qt.Orientation.Horizontal)
         self.jump_timing_slider.setRange(1, 10)
         self.jump_timing_slider.setSingleStep(1)
         self.jump_timing_slider.setPageStep(1)
 
-        reveal_label = QLabel(self.tr("reveal_group"))
-        reveal_label.setStyleSheet("font-weight: 600;")
-        self.reveal_toggle = QCheckBox(self.tr("reveal_apply"))
+        # --- Reveal row ---
+        self.reveal_toggle = QCheckBox(self.tr("reveal_group"))
 
+        # --- Ship Handling buttons ---
         self.ship_handling_button = QPushButton(self.tr("ship_handling_open"))
         self.ship_handling_reset_button = QPushButton(self.tr("ship_handling_reset_sidebar"))
         self.ship_handling_button.setMinimumHeight(34)
         self.ship_handling_reset_button.setMinimumHeight(34)
 
-        bini_section = self._build_cheat_section()
-        bini_layout = QVBoxLayout(bini_section)
+        # --- BINI section ---
+        self.bini_section = self._build_cheat_section()
+        bini_layout = QVBoxLayout(self.bini_section)
         bini_layout.setContentsMargins(12, 12, 12, 12)
         bini_layout.setSpacing(8)
         bini_layout.addWidget(self.bini_toggle)
         bini_layout.addWidget(self.bini_hint_label)
 
-        values_section = self._build_cheat_section()
-        values_layout = QGridLayout(values_section)
-        values_layout.setContentsMargins(12, 12, 12, 12)
-        values_layout.setHorizontalSpacing(8)
-        values_layout.setVerticalSpacing(8)
-        values_layout.addWidget(cruise_label, 0, 0)
-        values_layout.addWidget(self.cruise_charge_value_label, 0, 1, alignment=Qt.AlignmentFlag.AlignRight)
-        values_layout.addWidget(self.cruise_charge_slider, 1, 0, 1, 2)
-        values_layout.addWidget(jump_timing_label, 2, 0)
-        values_layout.addWidget(self.jump_timing_toggle, 2, 1, alignment=Qt.AlignmentFlag.AlignRight)
-        values_layout.addWidget(self.jump_timing_value_label, 3, 0, 1, 2)
-        values_layout.addWidget(self.jump_timing_slider, 4, 0, 1, 2)
-        values_layout.addWidget(reveal_label, 5, 0)
-        values_layout.addWidget(self.reveal_toggle, 5, 1, alignment=Qt.AlignmentFlag.AlignRight)
+        # --- Compact cheat grid: one row per cheat ---
+        cheats_section = self._build_cheat_section()
+        grid = QGridLayout(cheats_section)
+        grid.setContentsMargins(12, 12, 12, 12)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(6)
 
+        row = 0
+        # Cruise Charge: label | slider | value
+        grid.addWidget(QLabel(self.tr("cruise_charge_group")), row, 0)
+        grid.addWidget(self.cruise_charge_slider, row, 1)
+        grid.addWidget(self.cruise_charge_value_label, row, 2, alignment=Qt.AlignmentFlag.AlignRight)
+
+        row += 1
+        # Cruise Disrupt: label | slider | value
+        grid.addWidget(QLabel(self.tr("cruise_disrupt_group")), row, 0)
+        grid.addWidget(self.cruise_disrupt_slider, row, 1)
+        grid.addWidget(self.cruise_disrupt_value_label, row, 2, alignment=Qt.AlignmentFlag.AlignRight)
+
+        row += 1
+        # Jump Timing: checkbox+label | slider | value
+        self.jump_timing_toggle.setText(self.tr("jump_timing_group"))
+        grid.addWidget(self.jump_timing_toggle, row, 0)
+        grid.addWidget(self.jump_timing_slider, row, 1)
+        grid.addWidget(self.jump_timing_value_label, row, 2, alignment=Qt.AlignmentFlag.AlignRight)
+
+        row += 1
+        # Reveal: checkbox spans full row
+        grid.addWidget(self.reveal_toggle, row, 0, 1, 3)
+
+        grid.setColumnStretch(1, 1)
+
+        # --- Tools section ---
         tools_section = self._build_cheat_section()
         tools_layout = QVBoxLayout(tools_section)
         tools_layout.setContentsMargins(12, 12, 12, 12)
@@ -344,13 +372,13 @@ class MainWindow(QMainWindow):
         mod_layout = QVBoxLayout(self.mod_controls_widget)
         mod_layout.setContentsMargins(0, 0, 0, 0)
         mod_layout.setSpacing(10)
-        mod_layout.addWidget(bini_section)
-        mod_layout.addWidget(values_section)
+        mod_layout.addWidget(cheats_section)
         mod_layout.addWidget(tools_section)
 
         layout.addWidget(title_label)
         layout.addWidget(self.cheat_installation_label)
         layout.addWidget(hint_label)
+        layout.addWidget(self.bini_section)
         layout.addWidget(self.mod_controls_widget)
         layout.addStretch(1)
         return panel
@@ -389,6 +417,7 @@ class MainWindow(QMainWindow):
             self.cheater_mode_switch.toggled.connect(self._toggle_cheater_mode)
             self.bini_toggle.toggled.connect(self._toggle_bini_conversion)
             self.cruise_charge_slider.valueChanged.connect(self._apply_cruise_charge_time)
+            self.cruise_disrupt_slider.valueChanged.connect(self._apply_cruise_disrupt_time)
             self.jump_timing_toggle.toggled.connect(self._toggle_jump_timing)
             self.jump_timing_slider.valueChanged.connect(self._apply_jump_timing)
             self.reveal_toggle.toggled.connect(self._toggle_reveal_everything)
@@ -449,16 +478,21 @@ class MainWindow(QMainWindow):
 
     def _populate_installations(self) -> None:
         self.installation_list.clear()
-        for installation in self.config.installations:
+        last_id = self.config.last_installation_id
+        select_row = 0
+        for index, installation in enumerate(self.config.installations):
             item = QListWidgetItem(self._icon_for_installation(installation), installation.name)
             item.setData(Qt.ItemDataRole.UserRole, installation.id)
             item.setToolTip(installation.exe_path)
             item.setTextAlignment(Qt.AlignmentFlag.AlignHCenter)
             item.setSizeHint(QSize(190, 140))
             self.installation_list.addItem(item)
+            if last_id and installation.id == last_id:
+                select_row = index
 
         if self.installation_list.count():
-            self.installation_list.setCurrentRow(0)
+            self.installation_list.setCurrentRow(select_row)
+            self._show_last_played_status()
 
     def _icon_for_installation(self, installation: Installation) -> QIcon:
         exe_path = Path(installation.exe_path)
@@ -468,6 +502,8 @@ class MainWindow(QMainWindow):
         else:
             base_icon = self.style().standardIcon(self.style().StandardPixmap.SP_ComputerIcon)
 
+        if installation.cheater_mode_enabled:
+            base_icon = self._with_cheat_glow(base_icon)
         if self._is_installation_running(installation):
             return self._with_running_badge(base_icon)
         return base_icon
@@ -492,6 +528,15 @@ class MainWindow(QMainWindow):
     def _on_installation_changed(self) -> None:
         self._update_launch_state()
         self._sync_cheat_panel_to_installation()
+        self._show_last_played_status()
+
+    def _show_last_played_status(self) -> None:
+        installation = self._current_installation()
+        if installation is None or not installation.last_played_at:
+            return
+        self.statusBar().showMessage(
+            self.tr("last_played_status", date=installation.last_played_at),
+        )
 
     def _open_settings(self) -> None:
         dialog = SettingsDialog(self.config.installations, self.translator, self)
@@ -624,6 +669,9 @@ class MainWindow(QMainWindow):
             path=perf_path,
         )
         self.statusBar().showMessage(message, 8000)
+        installation.last_played_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+        self.config.last_installation_id = installation.id
+        self._persist_config()
         self._refresh_process_state()
 
     def _change_language(self) -> None:
@@ -800,6 +848,20 @@ class MainWindow(QMainWindow):
         self._apply_cheater_switch_style(enabled)
         self._persist_config()
         self._update_cheat_panel_visibility()
+        self._apply_process_icons()
+
+        if not enabled:
+            try:
+                restored = self._get_cheat_service().reset_all_mods(installation)
+                if restored:
+                    self.statusBar().showMessage(
+                        self.tr("cheater_mode_reset_done", count=restored), 5000,
+                    )
+                    self._sync_cheat_panel_to_installation()
+            except OSError as error:
+                self.statusBar().showMessage(
+                    self.tr("cheater_mode_reset_failed", error=error), 5000,
+                )
 
     def _update_cheat_panel_visibility(self) -> None:
         if not self.show_cheat_features or not hasattr(self, "cheat_panel"):
@@ -824,6 +886,8 @@ class MainWindow(QMainWindow):
             self.cheat_installation_label.setText(self.tr("cheat_no_installation"))
             self.cruise_charge_value_label.setText(self.tr("cruise_charge_value", value="0.1"))
             self.cruise_charge_slider.setValue(1)
+            self.cruise_disrupt_value_label.setText(self.tr("cruise_disrupt_value", value="5.0"))
+            self.cruise_disrupt_slider.setValue(50)
             self.jump_timing_toggle.setChecked(False)
             self.jump_timing_value_label.setText(self.tr("jump_timing_value", value="0.1"))
             self.jump_timing_slider.setValue(1)
@@ -832,6 +896,7 @@ class MainWindow(QMainWindow):
             self.bini_toggle.setEnabled(False)
             self.reveal_toggle.setChecked(False)
             self.bini_hint_label.setVisible(True)
+            self.bini_section.setVisible(False)
             self.mod_controls_widget.setVisible(False)
             self._is_loading_cheat_controls = False
             self._update_cheat_panel_visibility()
@@ -845,12 +910,14 @@ class MainWindow(QMainWindow):
         try:
             cheat_service = self._get_cheat_service()
             cruise_charge = cheat_service.get_cruise_charge_time(installation)
+            cruise_disrupt = cheat_service.get_cruise_disrupt_time(installation)
             jump_timing = cheat_service.get_jump_timing_value(installation)
             jump_timing_enabled = cheat_service.has_backup(installation, "jump_timing")
             bini_pending = cheat_service.has_unconverted_bini_files(installation)
             reveal_enabled = cheat_service.has_backup(installation, "reveal_everything")
         except OSError:
             cruise_charge = None
+            cruise_disrupt = None
             jump_timing = None
             jump_timing_enabled = False
             bini_pending = True
@@ -860,6 +927,11 @@ class MainWindow(QMainWindow):
         self.cruise_charge_slider.setValue(slider_value)
         self.cruise_charge_value_label.setText(
             self.tr("cruise_charge_value", value=f"{slider_value / 10:.1f}")
+        )
+        disrupt_slider_value = max(1, min(50, int(round((cruise_disrupt if cruise_disrupt is not None else 5.0) * 10))))
+        self.cruise_disrupt_slider.setValue(disrupt_slider_value)
+        self.cruise_disrupt_value_label.setText(
+            self.tr("cruise_disrupt_value", value=f"{disrupt_slider_value / 10:.1f}")
         )
         jump_slider_value = max(1, min(10, int(round((jump_timing if jump_timing is not None else 0.1) * 10))))
         self.jump_timing_toggle.setChecked(jump_timing_enabled)
@@ -871,6 +943,7 @@ class MainWindow(QMainWindow):
         self.bini_toggle.setChecked(not bini_pending)
         self.bini_toggle.setEnabled(bini_pending)
         self.bini_hint_label.setVisible(bini_pending)
+        self.bini_section.setVisible(True)
         self.mod_controls_widget.setVisible(not bini_pending)
         self.reveal_toggle.setChecked(reveal_enabled)
         self._is_loading_cheat_controls = False
@@ -946,6 +1019,26 @@ class MainWindow(QMainWindow):
             return str(Path(exe_path).expanduser().resolve()).lower()
         except OSError:
             return str(Path(exe_path).expanduser()).lower()
+
+    def _with_cheat_glow(self, icon: QIcon) -> QIcon:
+        pixmap = icon.pixmap(QSize(64, 64))
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        # Red border
+        pen = QPen(QColor(220, 38, 38), 4)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRoundedRect(2, 2, 60, 60, 6, 6)
+        # Skull badge in bottom-right corner
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(220, 38, 38))
+        painter.drawEllipse(42, 42, 22, 22)
+        skull_font = QFont("Segoe UI Emoji", 12)
+        painter.setFont(skull_font)
+        painter.setPen(QColor(255, 255, 255))
+        painter.drawText(44, 44, 20, 20, Qt.AlignmentFlag.AlignCenter, "\u2620")
+        painter.end()
+        return QIcon(pixmap)
 
     def _with_running_badge(self, icon: QIcon) -> QIcon:
         pixmap = icon.pixmap(QSize(64, 64))
@@ -1067,6 +1160,32 @@ class MainWindow(QMainWindow):
             return
         self.statusBar().showMessage(
             self.tr("cruise_charge_done_message", value=f"{value:.1f}"),
+            3000,
+        )
+
+    def _apply_cruise_disrupt_time(self, slider_value: int) -> None:
+        self.cruise_disrupt_value_label.setText(
+            self.tr("cruise_disrupt_value", value=f"{slider_value / 10:.1f}")
+        )
+        if self._is_loading_cheat_controls:
+            return
+        installation = self._current_installation()
+        if installation is None:
+            return
+        try:
+            value = self._get_cheat_service().set_cruise_disrupt_time(
+                installation,
+                slider_value / 10,
+            )
+        except (OSError, ValueError) as error:
+            QMessageBox.critical(
+                self,
+                self.tr("cruise_disrupt_done_title"),
+                self.tr("mod_file_missing_message", error=error),
+            )
+            return
+        self.statusBar().showMessage(
+            self.tr("cruise_disrupt_done_message", value=f"{value:.1f}"),
             3000,
         )
 

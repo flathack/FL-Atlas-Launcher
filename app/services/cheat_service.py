@@ -3,9 +3,11 @@ from __future__ import annotations
 import ctypes
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import struct
 
 try:
@@ -17,6 +19,7 @@ from app.models.installation import Installation
 
 
 CRUISE_CHARGE_KEY = "CRUISE_STEADY_TIME"
+CRUISE_DISRUPT_KEY = "CRUISE_DISRUPT_TIME"
 JUMP_TIME_KEYS = (
     "jump_out_time",
     "jump_out_tunnel_time",
@@ -127,6 +130,41 @@ class CheatService:
     def reset_cruise_charge_time(self, installation: Installation) -> bool:
         return self._restore_backup(installation, "cruise_charge")
 
+    def get_cruise_disrupt_time(self, installation: Installation) -> float | None:
+        constants_path = self._constants_ini_path(installation)
+        if not constants_path.exists():
+            return None
+        document = self._read_text_document(constants_path)
+        match = re.search(
+            rf"^\s*{re.escape(CRUISE_DISRUPT_KEY)}\s*=\s*([^\r\n;#]+)",
+            document.text,
+            flags=re.IGNORECASE | re.MULTILINE,
+        )
+        if match is None:
+            return None
+        try:
+            return float(match.group(1).strip())
+        except ValueError:
+            return None
+
+    def set_cruise_disrupt_time(self, installation: Installation, value: float) -> float:
+        constants_path = self._constants_ini_path(installation)
+        document = self._read_text_document(constants_path)
+        updated_text, changed = self._set_value_in_section(
+            document.text,
+            section_name="EngineEquipConsts",
+            key=CRUISE_DISRUPT_KEY,
+            value=self._format_float(value),
+        )
+        if not changed:
+            return value
+        self._backup_files(installation, "cruise_disrupt", [constants_path])
+        self._write_text_document(constants_path, document, updated_text)
+        return value
+
+    def reset_cruise_disrupt_time(self, installation: Installation) -> bool:
+        return self._restore_backup(installation, "cruise_disrupt")
+
     def get_jump_timing_value(self, installation: Installation) -> float | None:
         jump_effect_path = self._jump_effect_path(installation)
         if not jump_effect_path.exists():
@@ -208,6 +246,7 @@ class CheatService:
         self._backup_files(installation, "bini_conversion", bini_files)
         for ini_file in bini_files:
             decoded_text = self._decode_bini_to_ini_text(ini_file.read_bytes())
+            self._ensure_writable(ini_file)
             ini_file.write_text(decoded_text, encoding="cp1252", newline="")
         return BiniConversionResult(converted=len(bini_files), skipped=skipped)
 
@@ -396,6 +435,14 @@ class CheatService:
 
     def has_backup(self, installation: Installation, mod_name: str) -> bool:
         return self._backup_root(installation, mod_name).exists()
+
+    def reset_all_mods(self, installation: Installation) -> int:
+        mod_names = ("cruise_charge", "cruise_disrupt", "jump_timing", "reveal_everything", "ship_handling")
+        restored = 0
+        for mod_name in mod_names:
+            if self._restore_backup(installation, mod_name):
+                restored += 1
+        return restored
 
     def _constants_ini_path(self, installation: Installation) -> Path:
         return self.resolve_game_root(installation) / "DATA" / "constants.ini"
@@ -642,6 +689,7 @@ class CheatService:
                 continue
             target = game_root / path.relative_to(backup_root)
             target.parent.mkdir(parents=True, exist_ok=True)
+            self._ensure_writable(target)
             shutil.copy2(path, target)
         shutil.rmtree(backup_root, ignore_errors=True)
         return True
@@ -670,7 +718,13 @@ class CheatService:
         newline = self._detect_newline(text)
         return TextDocument(text=text, encoding=encoding, newline=newline)
 
+    @staticmethod
+    def _ensure_writable(path: Path) -> None:
+        if path.exists() and not os.access(path, os.W_OK):
+            path.chmod(path.stat().st_mode | stat.S_IWRITE)
+
     def _write_text_document(self, path: Path, document: TextDocument, text: str) -> None:
+        self._ensure_writable(path)
         path.write_text(text, encoding=document.encoding, newline="")
 
     def _detect_encoding(self, data: bytes) -> str:
@@ -1014,12 +1068,12 @@ class CheatService:
             if current_section == "system":
                 nickname = str(block.get("nickname") or "").strip().lower()
                 if nickname:
-                    system_ids[nickname] = self._parse_int(block.get("strid_name"))
+                    system_ids[nickname] = self._parse_int(block.get("strid_name") or block.get("ids_name"))
             elif current_section == "base":
                 nickname = str(block.get("nickname") or "").strip().lower()
                 if nickname:
                     base_entries[nickname] = (
-                        self._parse_int(block.get("strid_name")),
+                        self._parse_int(block.get("strid_name") or block.get("ids_name")),
                         str(block.get("system") or "").strip().lower(),
                     )
 

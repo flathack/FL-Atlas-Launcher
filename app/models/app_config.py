@@ -12,6 +12,7 @@ class AppConfig:
     language: str = "de"
     cheater_mode: bool = False
     selected_resolution: str = ""
+    last_installation_id: str = ""
     faction_reputations: dict[str, dict[str, float]] = field(default_factory=dict)
     installations: list[Installation] = field(default_factory=list)
     mpid_profiles: list[MpidProfile] = field(default_factory=list)
@@ -23,6 +24,7 @@ class AppConfig:
             "language": self.language,
             "cheater_mode": self.cheater_mode,
             "selected_resolution": self.selected_resolution,
+            "last_installation_id": self.last_installation_id,
             "faction_reputations": self.faction_reputations,
             "installations": [installation.to_dict() for installation in self.installations],
             "mpid_profiles": [profile.to_dict() for profile in self.mpid_profiles],
@@ -59,6 +61,7 @@ class AppConfig:
             language=data.get("language", "de"),
             cheater_mode=bool(data.get("cheater_mode", False)),
             selected_resolution=data.get("selected_resolution", ""),
+            last_installation_id=str(data.get("last_installation_id", "")).strip(),
             faction_reputations=faction_reputations,
             installations=installations,
             mpid_profiles=mpid_profiles,

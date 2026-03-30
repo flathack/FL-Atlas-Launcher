@@ -11,6 +11,7 @@ class Installation:
     exe_path: str
     perf_options_path: str = ""
     cheater_mode_enabled: bool = False
+    last_played_at: str = ""
 
     @classmethod
     def create(
@@ -39,4 +40,5 @@ class Installation:
             exe_path=data.get("exe_path", "").strip(),
             perf_options_path=data.get("perf_options_path", "").strip(),
             cheater_mode_enabled=bool(data.get("cheater_mode_enabled", False)),
+            last_played_at=str(data.get("last_played_at", "")).strip(),
         )
