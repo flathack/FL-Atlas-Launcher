@@ -5,6 +5,9 @@ __pycache__/
 *.pyd
 dist/
 dist-x64/
+dist-x64-lean/
 build/
+build-x64-lean/
 build-x64/
 *.spec
+release-assets/
