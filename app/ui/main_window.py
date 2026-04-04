@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
 
 from app.i18n import Translator
 from app.models.app_config import AppConfig
+from app.themes import THEMES
 from app.models.installation import Installation
 from app.resource_utils import resource_path
 from app.services.cheat_service import CheatService
@@ -276,7 +277,7 @@ class MainWindow(QMainWindow):
         self.cheat_installation_label.setWordWrap(True)
         hint_label = QLabel(self.tr("cheat_panel_hint"))
         hint_label.setWordWrap(True)
-        hint_label.setStyleSheet("color: #94a3b8;")
+        hint_label.setStyleSheet(f"color: {THEMES[self.config.theme].hint_text};")
 
         # --- Cruise Charge row ---
         self.cruise_charge_value_label = QLabel()
@@ -376,8 +377,9 @@ class MainWindow(QMainWindow):
     def _build_cheat_section(self) -> QFrame:
         section = QFrame()
         section.setFrameShape(QFrame.Shape.StyledPanel)
+        c = THEMES[self.config.theme]
         section.setStyleSheet(
-            "QFrame { background-color: #111827; border: 1px solid #233045; border-radius: 12px; }"
+            f"QFrame {{ background-color: {c.alternate_base}; border: 1px solid {c.border}; border-radius: 12px; }}"
             "QLabel { border: none; background: transparent; }"
         )
         return section
@@ -712,30 +714,31 @@ class MainWindow(QMainWindow):
         if not self.show_cheat_features or not hasattr(self, "cheater_mode_switch"):
             return
         self.cheater_mode_switch.setText("ON" if enabled else "OFF")
+        c = THEMES[self.config.theme]
         self.cheater_mode_switch.setStyleSheet(
-            """
-            QCheckBox {
-                color: #f8fafc;
+            f"""
+            QCheckBox {{
+                color: {c.button_text};
                 font-weight: 700;
                 padding: 4px 10px 4px 38px;
                 border-radius: 14px;
-                background-color: #7f8c8d;
+                background-color: {c.disabled_button};
                 min-height: 28px;
-            }
-            QCheckBox::indicator {
+            }}
+            QCheckBox::indicator {{
                 width: 22px;
                 height: 22px;
                 border-radius: 11px;
                 margin-left: 4px;
-                background: #ffffff;
-            }
-            QCheckBox:checked {
+                background: {c.base};
+            }}
+            QCheckBox:checked {{
                 background-color: #129a74;
-            }
-            QCheckBox:disabled {
-                background-color: #c7ced6;
-                color: #eef2f6;
-            }
+            }}
+            QCheckBox:disabled {{
+                background-color: {c.disabled_button};
+                color: {c.disabled_button_text};
+            }}
             """
         )
 
