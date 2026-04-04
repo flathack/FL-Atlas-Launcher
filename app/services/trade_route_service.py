@@ -293,7 +293,8 @@ class TradeRouteService:
         system_index = self._build_system_index(layout.universe_file, resource_dlls)
         base_index = self._build_base_index(layout.universe_file, resource_dlls)
         self._enrich_base_index_from_system_files(layout, system_index, base_index)
-        adjacency = self._build_system_adjacency(layout.universe_file)
+        locked_gate_hashes = self._load_locked_gate_hashes(layout.universe_file)
+        adjacency = self._build_system_adjacency(layout.universe_file, locked_gate_hashes)
         market_entries = self._extract_market_entries(layout.market_files, base_index, commodity_prices)
         market_entries = self._add_implicit_base_price_sinks(market_entries, base_index, commodity_prices)
         return TradeRouteContext(
@@ -760,13 +761,18 @@ class TradeRouteService:
             }
         return result
 
-    def _build_system_adjacency(self, universe_file: Path | None) -> dict[str, set[str]]:
+    def _build_system_adjacency(
+        self,
+        universe_file: Path | None,
+        locked_gate_hashes: set[int] | None = None,
+    ) -> dict[str, set[str]]:
         if universe_file is None or not universe_file.exists():
             return {}
         systems_dir = universe_file.parent / "SYSTEMS"
         adjacency: dict[str, set[str]] = {}
         if not systems_dir.exists():
             return adjacency
+        locked = locked_gate_hashes or set()
         for system_dir in systems_dir.iterdir():
             if not system_dir.is_dir():
                 continue
@@ -787,14 +793,25 @@ class TradeRouteService:
             for section_name, entries in self._parse_ini_file(system_file):
                 if section_name.lower() != "object":
                     continue
+                nickname = ""
+                goto_value = ""
                 for key, value in entries:
-                    if key.lower() != "goto":
+                    key_lower = key.lower()
+                    if key_lower == "nickname":
+                        nickname = value.strip()
+                    elif key_lower == "goto":
+                        goto_value = value.strip()
+                if not goto_value:
+                    continue
+                if locked and nickname:
+                    obj_hash = self._fl_hash_nickname(nickname)
+                    if obj_hash in locked:
                         continue
-                    target = value.split(",", 1)[0].strip().upper()
-                    if not target:
-                        continue
-                    adjacency.setdefault(current_system, set()).add(target)
-                    adjacency.setdefault(target, set()).add(current_system)
+                target = goto_value.split(",", 1)[0].strip().upper()
+                if not target:
+                    continue
+                adjacency.setdefault(current_system, set()).add(target)
+                adjacency.setdefault(target, set()).add(current_system)
         return adjacency
 
     def _system_path_bfs(self, adjacency: dict[str, set[str]], src: str, dst: str) -> list[str]:
@@ -828,6 +845,58 @@ class TradeRouteService:
             raw = raw[len("commodity_") :]
         parts = [part for part in raw.split("_") if part]
         return " ".join(part[:1].upper() + part[1:] for part in parts) or nickname
+
+    # ------------------------------------------------------------------
+    # Freelancer nickname hash (CreateID) – used for locked-gate lookup
+    # ------------------------------------------------------------------
+    _FL_HASH_TABLE: list[int] | None = None
+
+    @classmethod
+    def _fl_hash_table(cls) -> list[int]:
+        if cls._FL_HASH_TABLE is not None:
+            return cls._FL_HASH_TABLE
+        poly = (0xA001 << (30 - 16)) & 0xFFFFFFFF
+        table: list[int] = []
+        for i in range(256):
+            c = i
+            for _ in range(8):
+                c = ((c >> 1) ^ poly) if (c & 1) else (c >> 1)
+            table.append(c & 0xFFFFFFFF)
+        cls._FL_HASH_TABLE = table
+        return table
+
+    @classmethod
+    def _fl_hash_nickname(cls, nickname: str) -> int:
+        txt = str(nickname or "").strip().lower()
+        if not txt:
+            return 0
+        table = cls._fl_hash_table()
+        h = 0
+        for b in txt.encode("latin1", errors="ignore"):
+            h = ((h >> 8) ^ table[(h ^ b) & 0xFF]) & 0xFFFFFFFF
+        h = ((h >> 24) | ((h >> 8) & 0x0000FF00) | ((h << 8) & 0x00FF0000) | ((h << 24) & 0xFFFFFFFF)) & 0xFFFFFFFF
+        h = ((h >> (32 - 30)) | 0x80000000) & 0xFFFFFFFF
+        return int(h)
+
+    def _load_locked_gate_hashes(self, universe_file: Path | None) -> set[int]:
+        if universe_file is None:
+            return set()
+        data_dir = universe_file.parent.parent
+        iw_file = self._ci_resolve(data_dir, "initialworld.ini")
+        if iw_file is None or not iw_file.is_file():
+            return set()
+        hashes: set[int] = set()
+        for section_name, entries in self._parse_ini_file(iw_file):
+            if section_name.lower() != "locked_gates":
+                continue
+            for key, value in entries:
+                if key.lower() != "locked_gate":
+                    continue
+                try:
+                    hashes.add(int(value.strip()))
+                except ValueError:
+                    continue
+        return hashes
 
     def _build_system_visual_cache(
         self,
