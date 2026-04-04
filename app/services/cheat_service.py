@@ -496,11 +496,11 @@ class CheatService:
                 return candidate
         raise FileNotFoundError("Could not locate freelancer.ini for string resolution.")
 
-    def _ship_name_cache_path(self) -> Path:
-        return self.storage_root.parent / "ship_names.json"
+    def _ship_name_cache_path(self, installation: Installation) -> Path:
+        return self.storage_root.parent / f"ship_names_{installation.id}.json"
 
-    def _read_ship_name_cache(self) -> dict[str, str]:
-        cache_path = self._ship_name_cache_path()
+    def _read_ship_name_cache(self, installation: Installation) -> dict[str, str]:
+        cache_path = self._ship_name_cache_path(installation)
         if not cache_path.exists():
             return {}
         try:
@@ -515,8 +515,8 @@ class CheatService:
             if str(key).strip() and str(value).strip()
         }
 
-    def _write_ship_name_cache(self, payload: dict[str, str]) -> None:
-        cache_path = self._ship_name_cache_path()
+    def _write_ship_name_cache(self, installation: Installation, payload: dict[str, str]) -> None:
+        cache_path = self._ship_name_cache_path(installation)
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         cache_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -525,7 +525,7 @@ class CheatService:
         installation: Installation,
         blocks: list[dict[str, object]],
     ) -> dict[str, str]:
-        cache = self._read_ship_name_cache()
+        cache = self._read_ship_name_cache(installation)
         missing: dict[str, int] = {}
         for block in blocks:
             nickname = str(block.get("nickname") or "").strip()
@@ -539,7 +539,7 @@ class CheatService:
             resolved = self._resolve_ids_name_texts(installation, missing)
             if resolved:
                 cache.update(resolved)
-                self._write_ship_name_cache(cache)
+                self._write_ship_name_cache(installation, cache)
 
         return cache
 
