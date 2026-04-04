@@ -160,6 +160,23 @@ class TradeRouteService:
         rows.sort(key=lambda item: (item.total_profit, item.profit_per_unit, item.source_system), reverse=True)
         return rows
 
+    def best_inner_system_routes(
+        self,
+        installation: Installation,
+        *,
+        cargo_capacity: int,
+        player_reputation: dict[str, float] | None = None,
+    ) -> list[TradeRouteRow]:
+        context = self._build_trade_route_context(installation)
+        candidates = self._candidate_routes(
+            context,
+            cargo_capacity=cargo_capacity,
+            max_jumps=0,
+            player_reputation=player_reputation,
+        )
+        candidates.sort(key=lambda item: (item.total_profit, item.profit_per_unit, item.source_system), reverse=True)
+        return candidates
+
     def best_routes_per_base(
         self,
         installation: Installation,
@@ -325,6 +342,7 @@ class TradeRouteService:
                 entry
                 for entry in entries
                 if self._is_market_entry_accessible(context.base_index, entry, normalized_reputation)
+                and "_miner" not in str(entry.get("base_nick", "")).lower()
             ]
             sources = [entry for entry in accessible_entries if bool(entry["is_source"])] or accessible_entries
             sinks = [entry for entry in accessible_entries if not bool(entry["is_source"])]
