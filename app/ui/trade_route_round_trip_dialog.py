@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QSpinBox,
     QTableWidget,
@@ -73,6 +74,9 @@ class TradeRouteRoundTripDialog(QDialog):
             ]
         )
         self.table.horizontalHeader().setStretchLastSection(True)
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText(self.tr("trade_routes_search"))
+        self.search_input.setClearButtonEnabled(True)
         self.summary_label = QLabel()
         self.summary_label.setWordWrap(True)
         self.hint_label = QLabel(self.tr("trade_round_trip_detail_hint"))
@@ -102,6 +106,7 @@ class TradeRouteRoundTripDialog(QDialog):
 
         root = QVBoxLayout(self)
         root.addLayout(controls)
+        root.addWidget(self.search_input)
         root.addWidget(self.table, 1)
         root.addWidget(self.summary_label)
         root.addWidget(self.hint_label)
@@ -114,6 +119,7 @@ class TradeRouteRoundTripDialog(QDialog):
         self.leg_spin.valueChanged.connect(lambda _value: self._refresh_loops())
         self.table.currentCellChanged.connect(self._update_summary)
         self.table.itemDoubleClicked.connect(lambda _item: self._open_detail_dialog())
+        self.search_input.textChanged.connect(self._apply_filter)
         self.button_box.rejected.connect(self.close)
 
     def _load_ships(self) -> None:
@@ -152,6 +158,7 @@ class TradeRouteRoundTripDialog(QDialog):
                 item.setData(Qt.ItemDataRole.UserRole, loop)
                 self.table.setItem(row_index, column, item)
         self.table.resizeColumnsToContents()
+        self._apply_filter()
         self._update_summary()
 
     def _update_summary(self, *_args: object) -> None:
@@ -177,6 +184,18 @@ class TradeRouteRoundTripDialog(QDialog):
                 profit=f"{loop.total_profit:,}".replace(",", "."),
             )
         )
+
+    def _apply_filter(self) -> None:
+        text = self.search_input.text().strip().lower()
+        for row in range(self.table.rowCount()):
+            if not text:
+                self.table.setRowHidden(row, False)
+                continue
+            match = any(
+                text in (self.table.item(row, col).text().lower() if self.table.item(row, col) else "")
+                for col in range(self.table.columnCount())
+            )
+            self.table.setRowHidden(row, not match)
 
     def _open_detail_dialog(self) -> None:
         current_row = self.table.currentRow()

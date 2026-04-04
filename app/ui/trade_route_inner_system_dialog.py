@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -65,6 +66,9 @@ class TradeRouteInnerSystemDialog(QDialog):
             ]
         )
         self.table.horizontalHeader().setStretchLastSection(True)
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText(self.tr("trade_routes_search"))
+        self.search_input.setClearButtonEnabled(True)
 
         self.button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
 
@@ -88,12 +92,14 @@ class TradeRouteInnerSystemDialog(QDialog):
 
         root = QVBoxLayout(self)
         root.addLayout(controls)
+        root.addWidget(self.search_input)
         root.addWidget(self.table, 1)
         root.addWidget(self.button_box)
 
     def _connect_signals(self) -> None:
         self.refresh_button.clicked.connect(self._refresh_routes)
         self.ship_combo.currentIndexChanged.connect(lambda _index: self._refresh_routes())
+        self.search_input.textChanged.connect(self._apply_filter)
         self.button_box.rejected.connect(self.close)
 
     def _load_ships(self) -> None:
@@ -135,6 +141,19 @@ class TradeRouteInnerSystemDialog(QDialog):
                 self.table.setItem(row_index, offset, item)
 
         self.table.resizeColumnsToContents()
+        self._apply_filter()
+
+    def _apply_filter(self) -> None:
+        text = self.search_input.text().strip().lower()
+        for row in range(self.table.rowCount()):
+            if not text:
+                self.table.setRowHidden(row, False)
+                continue
+            match = any(
+                text in (self.table.item(row, col).text().lower() if self.table.item(row, col) else "")
+                for col in range(self.table.columnCount())
+            )
+            self.table.setRowHidden(row, not match)
 
     def _open_preview(self, route: TradeRouteRow) -> None:
         preview_data = self.trade_route_service.build_route_preview(self.installation, route)
