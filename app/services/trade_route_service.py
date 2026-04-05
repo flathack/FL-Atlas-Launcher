@@ -112,12 +112,30 @@ class TradeRouteService:
     def __init__(self, cheat_service: CheatService) -> None:
         self.cheat_service = cheat_service
         self._context_cache: dict[str, TradeRouteContext] = {}
+        self._candidate_cache: dict[tuple, list[TradeRouteRow]] = {}
+        self._routes_by_system_cache: dict[tuple, list[TradeRouteRow]] = {}
+        self._inner_system_cache: dict[tuple, list[TradeRouteRow]] = {}
+        self._round_trip_cache: dict[tuple, list[TradeRouteLoopRow]] = {}
+
+    @staticmethod
+    def _rep_key(player_reputation: dict[str, float] | None) -> tuple:
+        if not player_reputation:
+            return ()
+        return tuple(sorted(player_reputation.items()))
 
     def invalidate_cache(self, installation_id: str | None = None) -> None:
         if installation_id is None:
             self._context_cache.clear()
+            self._candidate_cache.clear()
+            self._routes_by_system_cache.clear()
+            self._inner_system_cache.clear()
+            self._round_trip_cache.clear()
         else:
             self._context_cache.pop(installation_id, None)
+            for cache in (self._candidate_cache, self._routes_by_system_cache,
+                          self._inner_system_cache, self._round_trip_cache):
+                for key in [k for k in cache if k[0] == installation_id]:
+                    cache.pop(key, None)
 
     def ship_options(self, installation: Installation) -> list[TradeRouteShipOption]:
         rows = self.cheat_service.ship_info_rows(installation)
@@ -151,6 +169,12 @@ class TradeRouteService:
         player_reputation: dict[str, float] | None = None,
         progress_callback: object | None = None,
     ) -> list[TradeRouteRow]:
+        cache_key = (installation.id, cargo_capacity, max_jumps, self._rep_key(player_reputation))
+        cached = self._routes_by_system_cache.get(cache_key)
+        if cached is not None:
+            if progress_callback is not None:
+                progress_callback(100)
+            return cached
         if progress_callback is not None:
             progress_callback(0)
         context = self._build_trade_route_context(installation)
@@ -175,6 +199,7 @@ class TradeRouteService:
 
         rows = list(best_by_system.values())
         rows.sort(key=lambda item: (item.total_profit, item.profit_per_unit, item.source_system), reverse=True)
+        self._routes_by_system_cache[cache_key] = rows
         return rows
 
     def best_inner_system_routes(
@@ -185,6 +210,12 @@ class TradeRouteService:
         player_reputation: dict[str, float] | None = None,
         progress_callback: object | None = None,
     ) -> list[TradeRouteRow]:
+        cache_key = (installation.id, cargo_capacity, self._rep_key(player_reputation))
+        cached = self._inner_system_cache.get(cache_key)
+        if cached is not None:
+            if progress_callback is not None:
+                progress_callback(100)
+            return cached
         if progress_callback is not None:
             progress_callback(0)
         context = self._build_trade_route_context(installation)
@@ -202,6 +233,7 @@ class TradeRouteService:
             ),
         )
         candidates.sort(key=lambda item: (item.total_profit, item.profit_per_unit, item.source_system), reverse=True)
+        self._inner_system_cache[cache_key] = candidates
         return candidates
 
     def best_routes_per_base(
@@ -238,6 +270,13 @@ class TradeRouteService:
         progress_callback: object | None = None,
     ) -> list[TradeRouteLoopRow]:
         leg_count = max(3, min(int(leg_count), 6))
+        cache_key = (installation.id, cargo_capacity, max_jumps, leg_count,
+                     max_results, self._rep_key(player_reputation))
+        cached = self._round_trip_cache.get(cache_key)
+        if cached is not None:
+            if progress_callback is not None:
+                progress_callback(100)
+            return cached
         if progress_callback is not None:
             progress_callback(0)
         context = self._build_trade_route_context(installation)
@@ -257,6 +296,7 @@ class TradeRouteService:
         if progress_callback is not None:
             progress_callback(60)
         if not candidate_routes:
+            self._round_trip_cache[cache_key] = []
             return []
 
         best_edge_by_pair: dict[tuple[str, str], TradeRouteRow] = {}
@@ -291,7 +331,9 @@ class TradeRouteService:
             )
 
         loops.sort(key=lambda item: (item.total_profit, -item.total_jumps, item.route_text), reverse=True)
-        return loops[: max(1, int(max_results))]
+        result = loops[: max(1, int(max_results))]
+        self._round_trip_cache[cache_key] = result
+        return result
 
     def build_route_preview(self, installation: Installation, route: TradeRouteRow) -> TradeRoutePreviewData:
         context = self._build_trade_route_context(installation)

@@ -201,9 +201,15 @@ class _InnerSystemTab(QWidget, _LoadingMixin):
         self.search_input.setClearButtonEnabled(True)
 
         self._init_loading_widgets(translator)
+        self._started = False
         self._build_ui()
         self._connect_signals()
         self._load_ships()
+
+    def start(self) -> None:
+        if self._started:
+            return
+        self._started = True
         self._refresh_routes()
 
     def tr(self, key: str, **kwargs: object) -> str:
@@ -242,7 +248,7 @@ class _InnerSystemTab(QWidget, _LoadingMixin):
             self.ship_combo.addItem(option.label, option.cargo_capacity)
 
     def _refresh_routes(self) -> None:
-        if self._worker_thread is not None:
+        if not self._started or self._worker_thread is not None:
             return
         cargo_capacity = int(self.ship_combo.currentData() or 0)
         self._set_loading(True)
@@ -365,9 +371,15 @@ class _TradeRoutesTab(QWidget, _LoadingMixin):
         self.path_label.setWordWrap(True)
 
         self._init_loading_widgets(translator)
+        self._started = False
         self._build_ui()
         self._connect_signals()
         self._load_ships()
+
+    def start(self) -> None:
+        if self._started:
+            return
+        self._started = True
         self._refresh_routes()
 
     def tr(self, key: str, **kwargs: object) -> str:
@@ -410,7 +422,7 @@ class _TradeRoutesTab(QWidget, _LoadingMixin):
             self.ship_combo.addItem(option.label, option.cargo_capacity)
 
     def _refresh_routes(self) -> None:
-        if self._worker_thread is not None:
+        if not self._started or self._worker_thread is not None:
             return
         cargo_capacity = int(self.ship_combo.currentData() or 0)
         max_jumps = int(self.jump_spin.value())
@@ -555,9 +567,15 @@ class _RoundTripTab(QWidget, _LoadingMixin):
         self.hint_label.setWordWrap(True)
 
         self._init_loading_widgets(translator)
+        self._started = False
         self._build_ui()
         self._connect_signals()
         self._load_ships()
+
+    def start(self) -> None:
+        if self._started:
+            return
+        self._started = True
         self._refresh_loops()
 
     def tr(self, key: str, **kwargs: object) -> str:
@@ -604,7 +622,7 @@ class _RoundTripTab(QWidget, _LoadingMixin):
             self.ship_combo.addItem(option.label, option.cargo_capacity)
 
     def _refresh_loops(self) -> None:
-        if self._worker_thread is not None:
+        if not self._started or self._worker_thread is not None:
             return
         cargo_capacity = int(self.ship_combo.currentData() or 0)
         max_jumps = int(self.jump_spin.value())
@@ -749,3 +767,11 @@ class TradeRouteTabbedDialog(QDialog):
         root.addWidget(self.button_box)
 
         self.tabs.setCurrentIndex(max(0, min(initial_tab, 2)))
+        self.tabs.currentChanged.connect(self._on_tab_changed)
+        # Start only the initially visible tab
+        self._on_tab_changed(self.tabs.currentIndex())
+
+    def _on_tab_changed(self, index: int) -> None:
+        tab = self.tabs.widget(index)
+        if hasattr(tab, "start"):
+            tab.start()
