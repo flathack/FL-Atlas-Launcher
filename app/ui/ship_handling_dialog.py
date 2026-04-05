@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from pathlib import Path
+
+from PySide6.QtCore import QObject, QSize, QThread, Qt, Signal
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -20,7 +23,35 @@ from PySide6.QtWidgets import (
 
 from app.i18n import Translator
 from app.models.installation import Installation
-from app.services.cheat_service import CheatService
+from app.services.cheat_service import CheatService, ShipInfoRow
+from app.services.ship_render_service import ShipRenderService
+from app.ui.ship_preview_dialog import ShipPreviewDialog
+
+
+class _IconLoaderWorker(QObject):
+    """Renders ship icons in a background thread, emitting one signal per icon."""
+    icon_ready = Signal(int, str)  # (row_index, icon_path)
+    finished = Signal()
+
+    def __init__(
+        self,
+        items: list[tuple[int, str, str]],
+        game_root: Path,
+        render_service: ShipRenderService,
+    ) -> None:
+        super().__init__()
+        self._items = items  # [(row, nickname, da_archetype), ...]
+        self._game_root = game_root
+        self._render_service = render_service
+
+    def run(self) -> None:
+        for row, nickname, da_archetype in self._items:
+            if QThread.currentThread().isInterruptionRequested():
+                break
+            path = self._render_service.get_icon_path(self._game_root, nickname, da_archetype)
+            if path and path.exists():
+                self.icon_ready.emit(row, str(path))
+        self.finished.emit()
 
 
 class ShipInfoDialog(QDialog):
@@ -29,12 +60,21 @@ class ShipInfoDialog(QDialog):
         installation: Installation,
         cheat_service: CheatService,
         translator: Translator,
+        ship_render_service: ShipRenderService | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.installation = installation
         self.cheat_service = cheat_service
         self.translator = translator
+        self._ship_render_service = ship_render_service
+        self._game_root: Path | None = None
+        self._ship_rows: list[ShipInfoRow] = []
+        self._icon_thread: QThread | None = None
+        try:
+            self._game_root = cheat_service.resolve_game_root(installation)
+        except OSError:
+            pass
 
         self.setWindowTitle(self.tr("ship_info_title", name=installation.name))
         self.resize(980, 640)
@@ -48,6 +88,7 @@ class ShipInfoDialog(QDialog):
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.setIconSize(QSize(32, 32))
         self.table.setHorizontalHeaderLabels(
             [
                 self.tr("ship_column_name"),
@@ -86,17 +127,23 @@ class ShipInfoDialog(QDialog):
     def _connect_signals(self) -> None:
         self.reload_button.clicked.connect(self._load_profiles)
         self.search_edit.textChanged.connect(self._apply_filter)
+        self.table.itemDoubleClicked.connect(lambda _: self._open_ship_preview())
         self.button_box.rejected.connect(self.reject)
 
     def _load_profiles(self) -> None:
-        profiles = self.cheat_service.ship_info_rows(self.installation)
+        self._stop_icon_loader()
+        self._ship_rows = self.cheat_service.ship_info_rows(self.installation)
+        profiles = self._ship_rows
 
         self.table.setRowCount(len(profiles))
+        icon_jobs: list[tuple[int, str, str]] = []
         for row, profile in enumerate(profiles):
             item = QTableWidgetItem(self._display_text(profile))
             item.setData(Qt.ItemDataRole.UserRole, profile.nickname)
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(row, 0, item)
+            if profile.da_archetype:
+                icon_jobs.append((row, profile.nickname, profile.da_archetype))
 
             armor_item = QTableWidgetItem(f"{profile.armor:,}".replace(",", "."))
             armor_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -119,6 +166,34 @@ class ShipInfoDialog(QDialog):
 
         self._apply_filter(self.search_edit.text())
         self.table.resizeRowsToContents()
+        self._start_icon_loader(icon_jobs)
+
+    def _start_icon_loader(self, jobs: list[tuple[int, str, str]]) -> None:
+        if not jobs or not self._ship_render_service or not self._game_root:
+            return
+        thread = QThread(self)
+        worker = _IconLoaderWorker(jobs, self._game_root, self._ship_render_service)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.icon_ready.connect(self._on_icon_ready)
+        worker.finished.connect(thread.quit)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(lambda: setattr(self, '_icon_thread', None))
+        thread._worker_ref = worker  # type: ignore[attr-defined]
+        self._icon_thread = thread
+        thread.start()
+
+    def _stop_icon_loader(self) -> None:
+        if self._icon_thread is not None:
+            self._icon_thread.requestInterruption()
+            self._icon_thread.quit()
+            self._icon_thread.wait(2000)
+            self._icon_thread = None
+
+    def _on_icon_ready(self, row: int, icon_path: str) -> None:
+        item = self.table.item(row, 0)
+        if item is not None:
+            item.setIcon(QIcon(icon_path))
 
     def _apply_filter(self, text: str) -> None:
         query = text.strip().lower()
@@ -132,6 +207,27 @@ class ShipInfoDialog(QDialog):
                 row,
                 bool(query and query not in display_text and query not in nickname and query not in locations),
             )
+
+    def _ship_icon(self, profile: ShipInfoRow) -> QIcon | None:
+        """Synchronous icon lookup — only returns cached icons."""
+        if not self._ship_render_service or not self._game_root or not profile.da_archetype:
+            return None
+        icon_path = self._ship_render_service._icon_dir / f"{profile.nickname}.png"
+        if icon_path.exists():
+            return QIcon(str(icon_path))
+        return None
+
+    def _open_ship_preview(self) -> None:
+        current_row = self.table.currentRow()
+        if current_row < 0 or current_row >= len(self._ship_rows):
+            return
+        ship = self._ship_rows[current_row]
+        if not self._ship_render_service or not self._game_root:
+            return
+        dialog = ShipPreviewDialog(ship, self._game_root, self._ship_render_service, self.translator, self)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        dialog.show()
+        dialog.raise_()
 
     def _display_text(self, profile: object) -> str:
         display_name = str(getattr(profile, "display_name", "") or "").strip()

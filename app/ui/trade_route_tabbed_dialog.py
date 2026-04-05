@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import QObject, QThread, Qt, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
@@ -23,11 +25,15 @@ from PySide6.QtWidgets import (
 
 from app.i18n import Translator
 from app.models.installation import Installation
+from app.services.cheat_service import CheatService, ShipInfoRow
+from app.services.ship_render_service import ShipRenderService
 from app.services.trade_route_service import (
     TradeRouteLoopRow,
     TradeRouteRow,
     TradeRouteService,
 )
+from app.ui.ship_handling_dialog import _IconLoaderWorker
+from app.ui.ship_preview_dialog import ShipPreviewDialog
 from app.ui.trade_route_preview_dialog import TradeRoutePreviewDialog
 from app.ui.trade_route_round_trip_detail_dialog import TradeRouteRoundTripDetailDialog
 
@@ -171,6 +177,9 @@ class _InnerSystemTab(QWidget, _LoadingMixin):
     def __init__(self, installation: Installation, service: TradeRouteService,
                  translator: Translator, player_reputation: dict[str, float],
                  selected_ship: str = "",
+                 cheat_service: CheatService | None = None,
+                 ship_render_service: ShipRenderService | None = None,
+                 game_root: Path | None = None,
                  parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.installation = installation
@@ -178,11 +187,19 @@ class _InnerSystemTab(QWidget, _LoadingMixin):
         self.translator = translator
         self.player_reputation = player_reputation
         self._selected_ship = selected_ship
+        self._cheat_service = cheat_service
+        self._ship_render_service = ship_render_service
+        self._game_root = game_root
+        self._ship_info_map: dict[str, ShipInfoRow] = {}
         self._routes: list[TradeRouteRow] = []
         self._preview_windows: list[TradeRoutePreviewDialog] = []
         self._worker_thread: QThread | None = None
+        self._icon_thread: QThread | None = None
 
         self.ship_combo = QComboBox()
+        self.ship_info_button = QToolButton()
+        self.ship_info_button.setText("🔍")
+        self.ship_info_button.setToolTip(self.tr("ship_preview_button_tooltip"))
         self.refresh_button = QPushButton(self.tr("refresh"))
 
         self.table = QTableWidget(0, 8)
@@ -223,7 +240,10 @@ class _InnerSystemTab(QWidget, _LoadingMixin):
         filters = QWidget()
         form = QFormLayout(filters)
         form.setContentsMargins(0, 0, 0, 0)
-        form.addRow(self.tr("trade_routes_ship"), self.ship_combo)
+        ship_row = QHBoxLayout()
+        ship_row.addWidget(self.ship_combo, 1)
+        ship_row.addWidget(self.ship_info_button)
+        form.addRow(self.tr("trade_routes_ship"), ship_row)
 
         controls = QHBoxLayout()
         controls.addWidget(filters, 1)
@@ -243,18 +263,67 @@ class _InnerSystemTab(QWidget, _LoadingMixin):
     def _connect_signals(self) -> None:
         self.refresh_button.clicked.connect(self._refresh_routes)
         self.ship_combo.currentIndexChanged.connect(lambda _: self._on_ship_combo_changed())
+        self.ship_info_button.clicked.connect(self._open_ship_preview)
         self.search_input.textChanged.connect(self._apply_filter)
 
     def _load_ships(self) -> None:
+        self._stop_icon_loader()
         options = self.trade_route_service.ship_options(self.installation)
+        if self._cheat_service:
+            rows = self._cheat_service.ship_info_rows(self.installation)
+            self._ship_info_map = {r.nickname: r for r in rows}
         self.ship_combo.clear()
         selected_index = 0
+        icon_jobs: list[tuple[int, str, str]] = []
         for i, option in enumerate(options):
             self.ship_combo.addItem(option.label, (option.nickname, option.cargo_capacity))
+            info = self._ship_info_map.get(option.nickname)
+            if info and info.da_archetype:
+                icon_jobs.append((i, option.nickname, info.da_archetype))
             if option.nickname == self._selected_ship:
                 selected_index = i
         if options:
             self.ship_combo.setCurrentIndex(selected_index)
+        self._start_icon_loader(icon_jobs)
+
+    def _start_icon_loader(self, jobs: list[tuple[int, str, str]]) -> None:
+        if not jobs or not self._ship_render_service or not self._game_root:
+            return
+        thread = QThread(self)
+        worker = _IconLoaderWorker(jobs, self._game_root, self._ship_render_service)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.icon_ready.connect(self._on_icon_ready)
+        worker.finished.connect(thread.quit)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(lambda: setattr(self, '_icon_thread', None))
+        thread._worker_ref = worker  # type: ignore[attr-defined]
+        self._icon_thread = thread
+        thread.start()
+
+    def _stop_icon_loader(self) -> None:
+        if self._icon_thread is not None:
+            self._icon_thread.requestInterruption()
+            self._icon_thread.quit()
+            self._icon_thread.wait(2000)
+            self._icon_thread = None
+
+    def _on_icon_ready(self, index: int, icon_path: str) -> None:
+        if index < self.ship_combo.count():
+            self.ship_combo.setItemIcon(index, QIcon(icon_path))
+
+    def _open_ship_preview(self) -> None:
+        data = self.ship_combo.currentData()
+        if not data:
+            return
+        nickname = data[0]
+        info = self._ship_info_map.get(nickname)
+        if not info or not self._ship_render_service or not self._game_root:
+            return
+        dialog = ShipPreviewDialog(info, self._game_root, self._ship_render_service, self.translator, self)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        dialog.show()
+        dialog.raise_()
 
     def _on_ship_combo_changed(self) -> None:
         data = self.ship_combo.currentData()
@@ -351,6 +420,9 @@ class _TradeRoutesTab(QWidget, _LoadingMixin):
     def __init__(self, installation: Installation, service: TradeRouteService,
                  translator: Translator, player_reputation: dict[str, float],
                  selected_ship: str = "",
+                 cheat_service: CheatService | None = None,
+                 ship_render_service: ShipRenderService | None = None,
+                 game_root: Path | None = None,
                  parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.installation = installation
@@ -358,11 +430,19 @@ class _TradeRoutesTab(QWidget, _LoadingMixin):
         self.translator = translator
         self.player_reputation = player_reputation
         self._selected_ship = selected_ship
+        self._cheat_service = cheat_service
+        self._ship_render_service = ship_render_service
+        self._game_root = game_root
+        self._ship_info_map: dict[str, ShipInfoRow] = {}
         self._routes: list[TradeRouteRow] = []
         self._preview_windows: list[TradeRoutePreviewDialog] = []
         self._worker_thread: QThread | None = None
+        self._icon_thread: QThread | None = None
 
         self.ship_combo = QComboBox()
+        self.ship_info_button = QToolButton()
+        self.ship_info_button.setText("🔍")
+        self.ship_info_button.setToolTip(self.tr("ship_preview_button_tooltip"))
         self.jump_spin = QSpinBox()
         self.jump_spin.setRange(0, 20)
         self.jump_spin.setValue(3)
@@ -409,7 +489,10 @@ class _TradeRoutesTab(QWidget, _LoadingMixin):
         filters = QWidget()
         form = QFormLayout(filters)
         form.setContentsMargins(0, 0, 0, 0)
-        form.addRow(self.tr("trade_routes_ship"), self.ship_combo)
+        ship_row = QHBoxLayout()
+        ship_row.addWidget(self.ship_combo, 1)
+        ship_row.addWidget(self.ship_info_button)
+        form.addRow(self.tr("trade_routes_ship"), ship_row)
         form.addRow(self.tr("trade_routes_max_jumps"), self.jump_spin)
 
         controls = QHBoxLayout()
@@ -431,20 +514,69 @@ class _TradeRoutesTab(QWidget, _LoadingMixin):
     def _connect_signals(self) -> None:
         self.refresh_button.clicked.connect(self._refresh_routes)
         self.ship_combo.currentIndexChanged.connect(lambda _: self._on_ship_combo_changed())
+        self.ship_info_button.clicked.connect(self._open_ship_preview)
         self.jump_spin.valueChanged.connect(lambda _: self._refresh_routes())
         self.table.currentCellChanged.connect(self._update_path_label)
         self.search_input.textChanged.connect(self._apply_filter)
 
     def _load_ships(self) -> None:
+        self._stop_icon_loader()
         options = self.trade_route_service.ship_options(self.installation)
+        if self._cheat_service:
+            rows = self._cheat_service.ship_info_rows(self.installation)
+            self._ship_info_map = {r.nickname: r for r in rows}
         self.ship_combo.clear()
         selected_index = 0
+        icon_jobs: list[tuple[int, str, str]] = []
         for i, option in enumerate(options):
             self.ship_combo.addItem(option.label, (option.nickname, option.cargo_capacity))
+            info = self._ship_info_map.get(option.nickname)
+            if info and info.da_archetype:
+                icon_jobs.append((i, option.nickname, info.da_archetype))
             if option.nickname == self._selected_ship:
                 selected_index = i
         if options:
             self.ship_combo.setCurrentIndex(selected_index)
+        self._start_icon_loader(icon_jobs)
+
+    def _start_icon_loader(self, jobs: list[tuple[int, str, str]]) -> None:
+        if not jobs or not self._ship_render_service or not self._game_root:
+            return
+        thread = QThread(self)
+        worker = _IconLoaderWorker(jobs, self._game_root, self._ship_render_service)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.icon_ready.connect(self._on_icon_ready)
+        worker.finished.connect(thread.quit)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(lambda: setattr(self, '_icon_thread', None))
+        thread._worker_ref = worker  # type: ignore[attr-defined]
+        self._icon_thread = thread
+        thread.start()
+
+    def _stop_icon_loader(self) -> None:
+        if self._icon_thread is not None:
+            self._icon_thread.requestInterruption()
+            self._icon_thread.quit()
+            self._icon_thread.wait(2000)
+            self._icon_thread = None
+
+    def _on_icon_ready(self, index: int, icon_path: str) -> None:
+        if index < self.ship_combo.count():
+            self.ship_combo.setItemIcon(index, QIcon(icon_path))
+
+    def _open_ship_preview(self) -> None:
+        data = self.ship_combo.currentData()
+        if not data:
+            return
+        nickname = data[0]
+        info = self._ship_info_map.get(nickname)
+        if not info or not self._ship_render_service or not self._game_root:
+            return
+        dialog = ShipPreviewDialog(info, self._game_root, self._ship_render_service, self.translator, self)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        dialog.show()
+        dialog.raise_()
 
     def _on_ship_combo_changed(self) -> None:
         data = self.ship_combo.currentData()
@@ -562,6 +694,9 @@ class _RoundTripTab(QWidget, _LoadingMixin):
     def __init__(self, installation: Installation, service: TradeRouteService,
                  translator: Translator, player_reputation: dict[str, float],
                  selected_ship: str = "",
+                 cheat_service: CheatService | None = None,
+                 ship_render_service: ShipRenderService | None = None,
+                 game_root: Path | None = None,
                  parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.installation = installation
@@ -569,11 +704,19 @@ class _RoundTripTab(QWidget, _LoadingMixin):
         self.translator = translator
         self.player_reputation = player_reputation
         self._selected_ship = selected_ship
+        self._cheat_service = cheat_service
+        self._ship_render_service = ship_render_service
+        self._game_root = game_root
+        self._ship_info_map: dict[str, ShipInfoRow] = {}
         self._loops: list[TradeRouteLoopRow] = []
         self._detail_windows: list[TradeRouteRoundTripDetailDialog] = []
         self._worker_thread: QThread | None = None
+        self._icon_thread: QThread | None = None
 
         self.ship_combo = QComboBox()
+        self.ship_info_button = QToolButton()
+        self.ship_info_button.setText("🔍")
+        self.ship_info_button.setToolTip(self.tr("ship_preview_button_tooltip"))
         self.jump_spin = QSpinBox()
         self.jump_spin.setRange(0, 20)
         self.jump_spin.setValue(1)
@@ -621,7 +764,10 @@ class _RoundTripTab(QWidget, _LoadingMixin):
         filters = QWidget()
         form = QFormLayout(filters)
         form.setContentsMargins(0, 0, 0, 0)
-        form.addRow(self.tr("trade_routes_ship"), self.ship_combo)
+        ship_row = QHBoxLayout()
+        ship_row.addWidget(self.ship_combo, 1)
+        ship_row.addWidget(self.ship_info_button)
+        form.addRow(self.tr("trade_routes_ship"), ship_row)
         form.addRow(self.tr("trade_routes_max_jumps"), self.jump_spin)
         form.addRow(self.tr("trade_round_trip_leg_count"), self.leg_spin)
 
@@ -645,6 +791,7 @@ class _RoundTripTab(QWidget, _LoadingMixin):
     def _connect_signals(self) -> None:
         self.refresh_button.clicked.connect(self._refresh_loops)
         self.ship_combo.currentIndexChanged.connect(lambda _: self._on_ship_combo_changed())
+        self.ship_info_button.clicked.connect(self._open_ship_preview)
         self.jump_spin.valueChanged.connect(lambda _: self._refresh_loops())
         self.leg_spin.valueChanged.connect(lambda _: self._refresh_loops())
         self.table.currentCellChanged.connect(self._update_summary)
@@ -652,15 +799,63 @@ class _RoundTripTab(QWidget, _LoadingMixin):
         self.search_input.textChanged.connect(self._apply_filter)
 
     def _load_ships(self) -> None:
+        self._stop_icon_loader()
         options = self.trade_route_service.ship_options(self.installation)
+        if self._cheat_service:
+            rows = self._cheat_service.ship_info_rows(self.installation)
+            self._ship_info_map = {r.nickname: r for r in rows}
         self.ship_combo.clear()
         selected_index = 0
+        icon_jobs: list[tuple[int, str, str]] = []
         for i, option in enumerate(options):
             self.ship_combo.addItem(option.label, (option.nickname, option.cargo_capacity))
+            info = self._ship_info_map.get(option.nickname)
+            if info and info.da_archetype:
+                icon_jobs.append((i, option.nickname, info.da_archetype))
             if option.nickname == self._selected_ship:
                 selected_index = i
         if options:
             self.ship_combo.setCurrentIndex(selected_index)
+        self._start_icon_loader(icon_jobs)
+
+    def _start_icon_loader(self, jobs: list[tuple[int, str, str]]) -> None:
+        if not jobs or not self._ship_render_service or not self._game_root:
+            return
+        thread = QThread(self)
+        worker = _IconLoaderWorker(jobs, self._game_root, self._ship_render_service)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.icon_ready.connect(self._on_icon_ready)
+        worker.finished.connect(thread.quit)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(lambda: setattr(self, '_icon_thread', None))
+        thread._worker_ref = worker  # type: ignore[attr-defined]
+        self._icon_thread = thread
+        thread.start()
+
+    def _stop_icon_loader(self) -> None:
+        if self._icon_thread is not None:
+            self._icon_thread.requestInterruption()
+            self._icon_thread.quit()
+            self._icon_thread.wait(2000)
+            self._icon_thread = None
+
+    def _on_icon_ready(self, index: int, icon_path: str) -> None:
+        if index < self.ship_combo.count():
+            self.ship_combo.setItemIcon(index, QIcon(icon_path))
+
+    def _open_ship_preview(self) -> None:
+        data = self.ship_combo.currentData()
+        if not data:
+            return
+        nickname = data[0]
+        info = self._ship_info_map.get(nickname)
+        if not info or not self._ship_render_service or not self._game_root:
+            return
+        dialog = ShipPreviewDialog(info, self._game_root, self._ship_render_service, self.translator, self)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        dialog.show()
+        dialog.raise_()
 
     def _on_ship_combo_changed(self) -> None:
         data = self.ship_combo.currentData()
@@ -791,6 +986,8 @@ class TradeRouteTabbedDialog(QDialog):
         player_reputation: dict[str, float] | None = None,
         selected_ship: str = "",
         initial_tab: int = 0,
+        cheat_service: CheatService | None = None,
+        ship_render_service: ShipRenderService | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -801,10 +998,24 @@ class TradeRouteTabbedDialog(QDialog):
 
         reputation = dict(player_reputation or {})
 
+        # Resolve game root once for all tabs
+        game_root: Path | None = None
+        if cheat_service:
+            try:
+                game_root = cheat_service.resolve_game_root(installation)
+            except OSError:
+                pass
+
+        tab_kwargs: dict = dict(
+            cheat_service=cheat_service,
+            ship_render_service=ship_render_service,
+            game_root=game_root,
+        )
+
         self.tabs = QTabWidget()
-        self._inner_tab = _InnerSystemTab(installation, trade_route_service, translator, reputation, selected_ship, self)
-        self._routes_tab = _TradeRoutesTab(installation, trade_route_service, translator, reputation, selected_ship, self)
-        self._round_trip_tab = _RoundTripTab(installation, trade_route_service, translator, reputation, selected_ship, self)
+        self._inner_tab = _InnerSystemTab(installation, trade_route_service, translator, reputation, selected_ship, parent=self, **tab_kwargs)
+        self._routes_tab = _TradeRoutesTab(installation, trade_route_service, translator, reputation, selected_ship, parent=self, **tab_kwargs)
+        self._round_trip_tab = _RoundTripTab(installation, trade_route_service, translator, reputation, selected_ship, parent=self, **tab_kwargs)
 
         self._inner_tab.ship_changed.connect(self._on_ship_changed)
         self._routes_tab.ship_changed.connect(self._on_ship_changed)

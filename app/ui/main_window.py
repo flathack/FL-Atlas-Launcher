@@ -47,6 +47,7 @@ from app.services.mpid_transfer_service import MpidTransferService
 from app.services.npc_rumor_service import NpcRumorService
 from app.services.process_service import ProcessService
 from app.services.resolution_service import ResolutionService
+from app.services.ship_render_service import ShipRenderService
 from app.services.trade_route_service import TradeRouteService
 from app.ui.mpid_dialog import MpidDialog
 from app.ui.reputation_dialog import ReputationDialog
@@ -95,6 +96,7 @@ class MainWindow(QMainWindow):
         self._cheat_service: CheatService | None = None
         self._trade_route_service: TradeRouteService | None = None
         self._npc_rumor_service: NpcRumorService | None = None
+        self._ship_render_service: ShipRenderService | None = None
         self.launcher_service = LauncherService(
             ini_service=self.ini_service,
             resolution_service=self.resolution_service,
@@ -387,6 +389,11 @@ class MainWindow(QMainWindow):
         if self._npc_rumor_service is None:
             self._npc_rumor_service = NpcRumorService(self._get_cheat_service())
         return self._npc_rumor_service
+
+    def _get_ship_render_service(self) -> ShipRenderService:
+        if self._ship_render_service is None:
+            self._ship_render_service = ShipRenderService(self.config_service.config_path.parent / "ship_cache")
+        return self._ship_render_service
 
     def _connect_signals(self) -> None:
         self.installation_list.currentRowChanged.connect(self._on_installation_changed)
@@ -1305,7 +1312,10 @@ class MainWindow(QMainWindow):
         if installation is None:
             return
         try:
-            dialog = ShipInfoDialog(installation, self._get_cheat_service(), self.translator, self)
+            dialog = ShipInfoDialog(
+                installation, self._get_cheat_service(), self.translator,
+                ship_render_service=self._get_ship_render_service(), parent=self,
+            )
         except OSError as error:
             QMessageBox.critical(
                 self,
@@ -1341,6 +1351,8 @@ class MainWindow(QMainWindow):
                 self.translator,
                 player_reputation=self._reputation_values_for_installation(installation.id),
                 selected_ship=self.config.selected_ships.get(installation.id, ""),
+                cheat_service=self._get_cheat_service(),
+                ship_render_service=self._get_ship_render_service(),
                 parent=self,
             )
         except OSError as error:

@@ -61,6 +61,11 @@ class ShipInfoRow:
     cargo_capacity: int
     price: int
     locations: list[str]
+    ship_type: str = ""
+    ship_class: int = -1
+    nanobot_limit: int = 0
+    shield_battery_limit: int = 0
+    da_archetype: str = ""
 
     @property
     def price_display(self) -> str:
@@ -373,6 +378,11 @@ class CheatService:
                     cargo_capacity=cargo_capacity,
                     price=price,
                     locations=[location],
+                    ship_type=str(ship_block.get("type", "")).strip(),
+                    ship_class=self._parse_int(ship_block.get("ship_class", "-1")),
+                    nanobot_limit=self._parse_int(ship_block.get("nanobot_limit", "0")),
+                    shield_battery_limit=self._parse_int(ship_block.get("shield_battery_limit", "0")),
+                    da_archetype=str(ship_block.get("da_archetype", "")).strip(),
                 )
                 continue
 
