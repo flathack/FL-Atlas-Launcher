@@ -52,9 +52,7 @@ from app.ui.mpid_dialog import MpidDialog
 from app.ui.reputation_dialog import ReputationDialog
 from app.ui.ship_handling_dialog import ShipHandlingDialog, ShipInfoDialog
 from app.ui.settings_dialog import SettingsDialog
-from app.ui.trade_route_dialog import TradeRouteDialog
-from app.ui.trade_route_inner_system_dialog import TradeRouteInnerSystemDialog
-from app.ui.trade_route_round_trip_dialog import TradeRouteRoundTripDialog
+from app.ui.trade_route_tabbed_dialog import TradeRouteTabbedDialog
 
 
 class SyncNotifier(QObject):
@@ -91,9 +89,7 @@ class MainWindow(QMainWindow):
         self._sync_worker_running = False
         self._process_worker_running = False
         self._running_processes: dict[str, list[int]] = {}
-        self._trade_route_windows: list[TradeRouteDialog] = []
-        self._inner_system_windows: list[TradeRouteInnerSystemDialog] = []
-        self._round_trip_windows: list[TradeRouteRoundTripDialog] = []
+        self._trade_route_windows: list[TradeRouteTabbedDialog] = []
         self.sync_notifier = SyncNotifier()
         self.process_notifier = ProcessNotifier()
         self._cheat_service: CheatService | None = None
@@ -198,16 +194,6 @@ class MainWindow(QMainWindow):
         self.reputation_action.setToolTip(self.tr("reputation_open"))
         self.reputation_action.triggered.connect(self._open_reputation_dialog)
         toolbar.addAction(self.reputation_action)
-
-        self.round_trip_action = QAction(self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowRight), self.tr("trade_round_trip_open"), self)
-        self.round_trip_action.setToolTip(self.tr("trade_round_trip_open"))
-        self.round_trip_action.triggered.connect(self._open_round_trip_dialog)
-        toolbar.addAction(self.round_trip_action)
-
-        self.inner_system_action = QAction(self.style().standardIcon(QStyle.StandardPixmap.SP_DirHomeIcon), self.tr("trade_inner_system_open"), self)
-        self.inner_system_action.setToolTip(self.tr("trade_inner_system_open"))
-        self.inner_system_action.triggered.connect(self._open_inner_system_dialog)
-        toolbar.addAction(self.inner_system_action)
         toolbar.addSeparator()
         toolbar.addWidget(self.sync_status_dot)
         toolbar.addWidget(self.sync_status_label)
@@ -517,8 +503,6 @@ class MainWindow(QMainWindow):
             self.cheater_mode_switch.setEnabled(has_installation)
         self.trade_routes_action.setEnabled(has_installation)
         self.reputation_action.setEnabled(has_installation)
-        self.round_trip_action.setEnabled(has_installation)
-        self.inner_system_action.setEnabled(has_installation)
         self._update_cheat_panel_state(has_installation)
         self._update_cheat_panel_visibility()
 
@@ -1351,7 +1335,7 @@ class MainWindow(QMainWindow):
         if installation is None:
             return
         try:
-            dialog = TradeRouteDialog(
+            dialog = TradeRouteTabbedDialog(
                 installation,
                 self._get_trade_route_service(),
                 self.translator,
@@ -1372,59 +1356,8 @@ class MainWindow(QMainWindow):
         dialog.raise_()
         dialog.activateWindow()
 
-    def _forget_trade_route_window(self, dialog: TradeRouteDialog) -> None:
+    def _forget_trade_route_window(self, dialog: TradeRouteTabbedDialog) -> None:
         self._trade_route_windows = [window for window in self._trade_route_windows if window is not dialog]
-
-    def _open_round_trip_dialog(self) -> None:
-        installation = self._current_installation()
-        if installation is None:
-            return
-
-        dialog = TradeRouteRoundTripDialog(
-            installation,
-            self._get_trade_route_service(),
-            self.translator,
-            player_reputation=self._reputation_values_for_installation(installation.id),
-            parent=self,
-        )
-        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
-        dialog.destroyed.connect(lambda _obj=None, current=dialog: self._forget_round_trip_window(current))
-        self._round_trip_windows.append(dialog)
-        dialog.show()
-        dialog.raise_()
-        dialog.activateWindow()
-
-    def _forget_round_trip_window(self, dialog: TradeRouteRoundTripDialog) -> None:
-        self._round_trip_windows = [window for window in self._round_trip_windows if window is not dialog]
-
-    def _open_inner_system_dialog(self) -> None:
-        installation = self._current_installation()
-        if installation is None:
-            return
-        try:
-            dialog = TradeRouteInnerSystemDialog(
-                installation,
-                self._get_trade_route_service(),
-                self.translator,
-                player_reputation=self._reputation_values_for_installation(installation.id),
-                parent=self,
-            )
-        except OSError as error:
-            QMessageBox.critical(
-                self,
-                self.tr("trade_routes_error_title"),
-                self.tr("mod_file_missing_message", error=error),
-            )
-            return
-        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
-        dialog.destroyed.connect(lambda _obj=None, current=dialog: self._forget_inner_system_window(current))
-        self._inner_system_windows.append(dialog)
-        dialog.show()
-        dialog.raise_()
-        dialog.activateWindow()
-
-    def _forget_inner_system_window(self, dialog: TradeRouteInnerSystemDialog) -> None:
-        self._inner_system_windows = [window for window in self._inner_system_windows if window is not dialog]
 
     def _open_reputation_dialog(self) -> None:
         installation = self._current_installation()

@@ -111,6 +111,13 @@ class TradeRouteContext:
 class TradeRouteService:
     def __init__(self, cheat_service: CheatService) -> None:
         self.cheat_service = cheat_service
+        self._context_cache: dict[str, TradeRouteContext] = {}
+
+    def invalidate_cache(self, installation_id: str | None = None) -> None:
+        if installation_id is None:
+            self._context_cache.clear()
+        else:
+            self._context_cache.pop(installation_id, None)
 
     def ship_options(self, installation: Installation) -> list[TradeRouteShipOption]:
         rows = self.cheat_service.ship_info_rows(installation)
@@ -142,13 +149,23 @@ class TradeRouteService:
         cargo_capacity: int,
         max_jumps: int,
         player_reputation: dict[str, float] | None = None,
+        progress_callback: object | None = None,
     ) -> list[TradeRouteRow]:
+        if progress_callback is not None:
+            progress_callback(0)
         context = self._build_trade_route_context(installation)
+        if progress_callback is not None:
+            progress_callback(30)
         candidate_routes = self._candidate_routes(
             context,
             cargo_capacity=cargo_capacity,
             max_jumps=max_jumps,
             player_reputation=player_reputation,
+            progress_callback=(
+                (lambda p: progress_callback(30 + int(p * 0.7)))
+                if progress_callback is not None
+                else None
+            ),
         )
         best_by_system: dict[str, TradeRouteRow] = {}
         for route in candidate_routes:
@@ -166,13 +183,23 @@ class TradeRouteService:
         *,
         cargo_capacity: int,
         player_reputation: dict[str, float] | None = None,
+        progress_callback: object | None = None,
     ) -> list[TradeRouteRow]:
+        if progress_callback is not None:
+            progress_callback(0)
         context = self._build_trade_route_context(installation)
+        if progress_callback is not None:
+            progress_callback(30)
         candidates = self._candidate_routes(
             context,
             cargo_capacity=cargo_capacity,
             max_jumps=0,
             player_reputation=player_reputation,
+            progress_callback=(
+                (lambda p: progress_callback(30 + int(p * 0.7)))
+                if progress_callback is not None
+                else None
+            ),
         )
         candidates.sort(key=lambda item: (item.total_profit, item.profit_per_unit, item.source_system), reverse=True)
         return candidates
@@ -208,15 +235,27 @@ class TradeRouteService:
         leg_count: int,
         player_reputation: dict[str, float] | None = None,
         max_results: int = 20,
+        progress_callback: object | None = None,
     ) -> list[TradeRouteLoopRow]:
         leg_count = max(3, min(int(leg_count), 6))
+        if progress_callback is not None:
+            progress_callback(0)
         context = self._build_trade_route_context(installation)
+        if progress_callback is not None:
+            progress_callback(20)
         candidate_routes = self._candidate_routes(
             context,
             cargo_capacity=cargo_capacity,
             max_jumps=max_jumps,
             player_reputation=player_reputation,
+            progress_callback=(
+                (lambda p: progress_callback(20 + int(p * 0.4)))
+                if progress_callback is not None
+                else None
+            ),
         )
+        if progress_callback is not None:
+            progress_callback(60)
         if not candidate_routes:
             return []
 
@@ -235,7 +274,11 @@ class TradeRouteService:
         loops: list[TradeRouteLoopRow] = []
         seen_cycles: set[tuple[str, ...]] = set()
 
-        for start_system in sorted(outgoing.keys()):
+        sorted_systems = sorted(outgoing.keys())
+        total_systems = len(sorted_systems)
+        for system_index, start_system in enumerate(sorted_systems):
+            if progress_callback is not None:
+                progress_callback(60 + int((system_index / max(total_systems, 1)) * 40))
             self._search_round_trip_loops(
                 start_system=start_system,
                 current_system=start_system,
@@ -303,6 +346,9 @@ class TradeRouteService:
         return TradeRoutePreviewData(commodity=route.commodity, systems=preview_systems)
 
     def _build_trade_route_context(self, installation: Installation) -> TradeRouteContext:
+        cached = self._context_cache.get(installation.id)
+        if cached is not None:
+            return cached
         layout = self._load_layout(installation)
         resource_dlls = self.cheat_service._resource_dll_paths(installation)
         commodity_prices, commodity_names = self._scan_commodity_prices(layout.goods_files, resource_dlls)
@@ -314,7 +360,7 @@ class TradeRouteService:
         adjacency = self._build_system_adjacency(layout.universe_file, locked_gate_hashes)
         market_entries = self._extract_market_entries(layout.market_files, base_index, commodity_prices)
         market_entries = self._add_implicit_base_price_sinks(market_entries, base_index, commodity_prices)
-        return TradeRouteContext(
+        context = TradeRouteContext(
             layout=layout,
             commodity_prices=commodity_prices,
             commodity_names=commodity_names,
@@ -324,6 +370,8 @@ class TradeRouteService:
             adjacency=adjacency,
             market_entries=market_entries,
         )
+        self._context_cache[installation.id] = context
+        return context
 
     def _candidate_routes(
         self,
@@ -332,12 +380,17 @@ class TradeRouteService:
         cargo_capacity: int,
         max_jumps: int,
         player_reputation: dict[str, float] | None = None,
+        progress_callback: object | None = None,
     ) -> list[TradeRouteRow]:
         if not context.commodity_prices:
             return []
         normalized_reputation = self._normalize_reputation_map(player_reputation)
         routes: list[TradeRouteRow] = []
-        for commodity, entries in context.market_entries.items():
+        commodity_items = list(context.market_entries.items())
+        total_commodities = len(commodity_items)
+        for commodity_index, (commodity, entries) in enumerate(commodity_items):
+            if progress_callback is not None and total_commodities > 0:
+                progress_callback(int((commodity_index / total_commodities) * 100))
             accessible_entries = [
                 entry
                 for entry in entries

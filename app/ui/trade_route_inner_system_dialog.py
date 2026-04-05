@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QObject, QThread, Qt, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QProgressBar,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -22,6 +23,33 @@ from app.i18n import Translator
 from app.models.installation import Installation
 from app.services.trade_route_service import TradeRouteRow, TradeRouteService
 from app.ui.trade_route_preview_dialog import TradeRoutePreviewDialog
+
+
+class _RouteWorker(QObject):
+    finished = Signal(list)
+    progress = Signal(int)
+
+    def __init__(
+        self,
+        service: TradeRouteService,
+        installation: Installation,
+        cargo_capacity: int,
+        player_reputation: dict[str, float],
+    ) -> None:
+        super().__init__()
+        self._service = service
+        self._installation = installation
+        self._cargo_capacity = cargo_capacity
+        self._player_reputation = player_reputation
+
+    def run(self) -> None:
+        routes = self._service.best_inner_system_routes(
+            self._installation,
+            cargo_capacity=self._cargo_capacity,
+            player_reputation=self._player_reputation,
+            progress_callback=self.progress.emit,
+        )
+        self.finished.emit(routes)
 
 
 class TradeRouteInnerSystemDialog(QDialog):
@@ -41,6 +69,7 @@ class TradeRouteInnerSystemDialog(QDialog):
         self.player_reputation = dict(player_reputation or {})
         self._routes: list[TradeRouteRow] = []
         self._preview_windows: list[TradeRoutePreviewDialog] = []
+        self._worker_thread: QThread | None = None
 
         self.setWindowTitle(self.tr("trade_inner_system_title", name=installation.name))
         self.resize(1240, 720)
@@ -70,6 +99,15 @@ class TradeRouteInnerSystemDialog(QDialog):
         self.search_input.setPlaceholderText(self.tr("trade_routes_search"))
         self.search_input.setClearButtonEnabled(True)
 
+        self.loading_label = QLabel(self.tr("trade_routes_loading"))
+        self.loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.loading_label.setVisible(False)
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setFormat("%p%")
+        self.progress_bar.setVisible(False)
+
         self.button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
 
         self._build_ui()
@@ -93,6 +131,8 @@ class TradeRouteInnerSystemDialog(QDialog):
         root = QVBoxLayout(self)
         root.addLayout(controls)
         root.addWidget(self.search_input)
+        root.addWidget(self.loading_label)
+        root.addWidget(self.progress_bar)
         root.addWidget(self.table, 1)
         root.addWidget(self.button_box)
 
@@ -109,12 +149,38 @@ class TradeRouteInnerSystemDialog(QDialog):
             self.ship_combo.addItem(option.label, option.cargo_capacity)
 
     def _refresh_routes(self) -> None:
+        if self._worker_thread is not None:
+            return
         cargo_capacity = int(self.ship_combo.currentData() or 0)
-        self._routes = self.trade_route_service.best_inner_system_routes(
+        self._set_loading(True)
+
+        self._worker_thread = QThread(self)
+        worker = _RouteWorker(
+            self.trade_route_service,
             self.installation,
-            cargo_capacity=cargo_capacity,
-            player_reputation=self.player_reputation,
+            cargo_capacity,
+            self.player_reputation,
         )
+        worker.moveToThread(self._worker_thread)
+        self._worker_thread.started.connect(worker.run)
+        worker.progress.connect(self.progress_bar.setValue)
+        worker.finished.connect(self._on_routes_ready)
+        worker.finished.connect(self._worker_thread.quit)
+        self._worker_thread.finished.connect(self._worker_thread.deleteLater)
+        self._worker_thread.finished.connect(lambda: setattr(self, "_worker_thread", None))
+        # prevent worker from being garbage-collected while thread runs
+        self._worker_thread._worker_ref = worker  # type: ignore[attr-defined]
+        self._worker_thread.start()
+
+    def _set_loading(self, loading: bool) -> None:
+        self.loading_label.setVisible(loading)
+        self.progress_bar.setVisible(loading)
+        self.table.setVisible(not loading)
+        self.refresh_button.setEnabled(not loading)
+        self.ship_combo.setEnabled(not loading)
+
+    def _on_routes_ready(self, routes: list[TradeRouteRow]) -> None:
+        self._routes = routes
         self.table.setRowCount(len(self._routes))
         eye_icon = self._build_eye_icon()
         for row_index, route in enumerate(self._routes):
@@ -141,6 +207,7 @@ class TradeRouteInnerSystemDialog(QDialog):
                 self.table.setItem(row_index, offset, item)
 
         self.table.resizeColumnsToContents()
+        self._set_loading(False)
         self._apply_filter()
 
     def _apply_filter(self) -> None:

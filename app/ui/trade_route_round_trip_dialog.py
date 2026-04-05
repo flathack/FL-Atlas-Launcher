@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QObject, QThread, Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QProgressBar,
     QPushButton,
     QSpinBox,
     QTableWidget,
@@ -23,6 +24,39 @@ from app.services.trade_route_service import TradeRouteLoopRow, TradeRouteServic
 from app.ui.trade_route_round_trip_detail_dialog import TradeRouteRoundTripDetailDialog
 
 
+class _RoundTripWorker(QObject):
+    finished = Signal(list)
+    progress = Signal(int)
+
+    def __init__(
+        self,
+        service: TradeRouteService,
+        installation: Installation,
+        cargo_capacity: int,
+        max_jumps: int,
+        leg_count: int,
+        player_reputation: dict[str, float],
+    ) -> None:
+        super().__init__()
+        self._service = service
+        self._installation = installation
+        self._cargo_capacity = cargo_capacity
+        self._max_jumps = max_jumps
+        self._leg_count = leg_count
+        self._player_reputation = player_reputation
+
+    def run(self) -> None:
+        loops = self._service.best_round_trips(
+            self._installation,
+            cargo_capacity=self._cargo_capacity,
+            max_jumps=self._max_jumps,
+            leg_count=self._leg_count,
+            player_reputation=self._player_reputation,
+            progress_callback=self.progress.emit,
+        )
+        self.finished.emit(loops)
+
+
 class TradeRouteRoundTripDialog(QDialog):
     def __init__(
         self,
@@ -31,7 +65,7 @@ class TradeRouteRoundTripDialog(QDialog):
         translator: Translator,
         *,
         initial_cargo_capacity: int = 0,
-        initial_max_jumps: int = 3,
+        initial_max_jumps: int = 1,
         initial_leg_count: int = 4,
         player_reputation: dict[str, float] | None = None,
         parent: QWidget | None = None,
@@ -42,6 +76,7 @@ class TradeRouteRoundTripDialog(QDialog):
         self.translator = translator
         self._loops: list[TradeRouteLoopRow] = []
         self._detail_windows: list[TradeRouteRoundTripDetailDialog] = []
+        self._worker_thread: QThread | None = None
         self._initial_cargo_capacity = max(0, int(initial_cargo_capacity))
         self._initial_max_jumps = max(0, int(initial_max_jumps))
         self._initial_leg_count = max(3, min(int(initial_leg_count), 6))
@@ -82,6 +117,15 @@ class TradeRouteRoundTripDialog(QDialog):
         self.hint_label = QLabel(self.tr("trade_round_trip_detail_hint"))
         self.hint_label.setWordWrap(True)
 
+        self.loading_label = QLabel(self.tr("trade_routes_loading"))
+        self.loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.loading_label.setVisible(False)
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setFormat("%p%")
+        self.progress_bar.setVisible(False)
+
         self.button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
 
         self._build_ui()
@@ -107,6 +151,8 @@ class TradeRouteRoundTripDialog(QDialog):
         root = QVBoxLayout(self)
         root.addLayout(controls)
         root.addWidget(self.search_input)
+        root.addWidget(self.loading_label)
+        root.addWidget(self.progress_bar)
         root.addWidget(self.table, 1)
         root.addWidget(self.summary_label)
         root.addWidget(self.hint_label)
@@ -134,14 +180,43 @@ class TradeRouteRoundTripDialog(QDialog):
             self.ship_combo.setCurrentIndex(selected_index)
 
     def _refresh_loops(self) -> None:
+        if self._worker_thread is not None:
+            return
         cargo_capacity = int(self.ship_combo.currentData() or 0)
-        self._loops = self.trade_route_service.best_round_trips(
+        max_jumps = int(self.jump_spin.value())
+        leg_count = int(self.leg_spin.value())
+        self._set_loading(True)
+
+        self._worker_thread = QThread(self)
+        worker = _RoundTripWorker(
+            self.trade_route_service,
             self.installation,
-            cargo_capacity=cargo_capacity,
-            max_jumps=int(self.jump_spin.value()),
-            leg_count=int(self.leg_spin.value()),
-            player_reputation=self.player_reputation,
+            cargo_capacity,
+            max_jumps,
+            leg_count,
+            self.player_reputation,
         )
+        worker.moveToThread(self._worker_thread)
+        self._worker_thread.started.connect(worker.run)
+        worker.progress.connect(self.progress_bar.setValue)
+        worker.finished.connect(self._on_loops_ready)
+        worker.finished.connect(self._worker_thread.quit)
+        self._worker_thread.finished.connect(self._worker_thread.deleteLater)
+        self._worker_thread.finished.connect(lambda: setattr(self, "_worker_thread", None))
+        self._worker_thread._worker_ref = worker  # type: ignore[attr-defined]
+        self._worker_thread.start()
+
+    def _set_loading(self, loading: bool) -> None:
+        self.loading_label.setVisible(loading)
+        self.progress_bar.setVisible(loading)
+        self.table.setVisible(not loading)
+        self.refresh_button.setEnabled(not loading)
+        self.ship_combo.setEnabled(not loading)
+        self.jump_spin.setEnabled(not loading)
+        self.leg_spin.setEnabled(not loading)
+
+    def _on_loops_ready(self, loops: list[TradeRouteLoopRow]) -> None:
+        self._loops = loops
         self.table.setRowCount(len(self._loops))
         for row_index, loop in enumerate(self._loops):
             values = [
@@ -158,6 +233,7 @@ class TradeRouteRoundTripDialog(QDialog):
                 item.setData(Qt.ItemDataRole.UserRole, loop)
                 self.table.setItem(row_index, column, item)
         self.table.resizeColumnsToContents()
+        self._set_loading(False)
         self._apply_filter()
         self._update_summary()
 
