@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QProgressBar,
     QSlider,
     QListWidget,
     QListWidgetItem,
@@ -64,6 +65,10 @@ class ProcessNotifier(QObject):
     result_ready = Signal(object)
 
 
+class CheatSyncNotifier(QObject):
+    result_ready = Signal(object)
+
+
 class MainWindow(QMainWindow):
     SYNC_POLL_INTERVAL_MS = 15000
     PROCESS_POLL_INTERVAL_MS = 2500
@@ -89,10 +94,12 @@ class MainWindow(QMainWindow):
         self._sync_request_id = 0
         self._sync_worker_running = False
         self._process_worker_running = False
+        self._cheat_sync_worker_running = False
         self._running_processes: dict[str, list[int]] = {}
         self._trade_route_windows: list[TradeRouteTabbedDialog] = []
         self.sync_notifier = SyncNotifier()
         self.process_notifier = ProcessNotifier()
+        self.cheat_sync_notifier = CheatSyncNotifier()
         self._cheat_service: CheatService | None = None
         self._trade_route_service: TradeRouteService | None = None
         self._npc_rumor_service: NpcRumorService | None = None
@@ -230,6 +237,13 @@ class MainWindow(QMainWindow):
         resolution_layout.addWidget(QLabel(self.tr("resolution")))
         resolution_layout.addWidget(self.resolution_combo, 1)
 
+        self.cheat_sync_progress = QProgressBar()
+        self.cheat_sync_progress.setMinimum(0)
+        self.cheat_sync_progress.setMaximum(0)
+        self.cheat_sync_progress.setTextVisible(False)
+        self.cheat_sync_progress.setFixedHeight(4)
+        self.cheat_sync_progress.hide()
+
         content_row = QWidget()
         content_layout = QHBoxLayout(content_row)
         content_layout.setContentsMargins(0, 0, 0, 0)
@@ -240,6 +254,7 @@ class MainWindow(QMainWindow):
             content_layout.addWidget(self.cheat_panel)
 
         layout.addWidget(mpid_row)
+        layout.addWidget(self.cheat_sync_progress)
         layout.addWidget(content_row, 1)
         layout.addWidget(resolution_row)
         layout.addWidget(self.launch_button)
@@ -417,6 +432,7 @@ class MainWindow(QMainWindow):
             self.process_timer.timeout.connect(self._refresh_process_state)
             self.sync_notifier.result_ready.connect(self._apply_sync_result)
             self.process_notifier.result_ready.connect(self._apply_process_state)
+            self.cheat_sync_notifier.result_ready.connect(self._apply_cheat_sync_result)
             self._persistent_signals_connected = True
 
     def _populate_mpid_profiles(self) -> None:
@@ -903,8 +919,18 @@ class MainWindow(QMainWindow):
         self.cheat_installation_label.setText(
             self.tr("cheat_selected_installation", name=installation.name)
         )
+        self.cheat_sync_progress.show()
+        self._cheat_sync_worker_running = True
+        cheat_service = self._get_cheat_service()
+        worker = threading.Thread(
+            target=self._run_cheat_sync,
+            args=(cheat_service, installation),
+            daemon=True,
+        )
+        worker.start()
+
+    def _run_cheat_sync(self, cheat_service: CheatService, installation: Installation) -> None:
         try:
-            cheat_service = self._get_cheat_service()
             bini_pending = cheat_service.has_unconverted_bini_files(installation)
             if bini_pending:
                 cheat_service.convert_bini_files(installation)
@@ -921,6 +947,27 @@ class MainWindow(QMainWindow):
             jump_timing_enabled = False
             reveal_enabled = False
             npc_rumors_enabled = False
+        self.cheat_sync_notifier.result_ready.emit({
+            "cruise_charge": cruise_charge,
+            "cruise_disrupt": cruise_disrupt,
+            "jump_timing": jump_timing,
+            "jump_timing_enabled": jump_timing_enabled,
+            "reveal_enabled": reveal_enabled,
+            "npc_rumors_enabled": npc_rumors_enabled,
+        })
+
+    def _apply_cheat_sync_result(self, payload: object) -> None:
+        self._cheat_sync_worker_running = False
+        self.cheat_sync_progress.hide()
+        if not isinstance(payload, dict):
+            self._is_loading_cheat_controls = False
+            return
+        cruise_charge = payload.get("cruise_charge")
+        cruise_disrupt = payload.get("cruise_disrupt")
+        jump_timing = payload.get("jump_timing")
+        jump_timing_enabled = payload.get("jump_timing_enabled", False)
+        reveal_enabled = payload.get("reveal_enabled", False)
+        npc_rumors_enabled = payload.get("npc_rumors_enabled", False)
 
         slider_value = max(1, min(50, int(round((cruise_charge if cruise_charge is not None else 0.1) * 10))))
         self.cruise_charge_slider.setValue(slider_value)
