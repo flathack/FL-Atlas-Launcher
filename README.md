@@ -1,19 +1,65 @@
 # FL Atlas Launcher
 
-Desktop launcher for managing multiple Freelancer installations.
+A desktop launcher for managing multiple Freelancer game installations, player profiles (MPIDs), and screen resolutions — built with PySide6.
 
-## Current status
+## Features
 
-The project currently includes:
+### Installation Management
 
-- a PySide6 application bootstrap
-- local JSON configuration storage
-- a main window with installation list
-- a settings dialog to add, edit, and remove installations
-- a resolution selector scaffold
-- running-process detection with highlighted installation icons
-- a context menu for stopping a running Freelancer.exe
-- a cheater mode sidebar with BINI conversion, Reveal Everything, and ship-handling tools
+- Manage multiple Freelancer installations side by side (e.g. vanilla, HD mod, Crossfire, Discovery)
+- Each installation stores a custom name, the path to `Freelancer.exe`, and the path to `PerfOptions.ini`
+- Double-click an installation to launch it directly
+- Running Freelancer processes are detected automatically and highlighted in the list
+- Right-click context menu to stop a running instance or open the installation folder in Explorer
+
+### Resolution Management
+
+- Select from 8 preset screen resolutions or use your monitor's native resolution
+- The current monitor resolution is detected via a native Windows query (DPI-aware)
+- The selected resolution is written to `PerfOptions.ini` automatically
+- Your selection is stored persistently and restored on the next launcher start
+
+### MPID Management
+
+Freelancer uses a unique **Multiplayer ID (MPID)** stored in the Windows Registry. The launcher lets you manage multiple MPIDs so you can switch between different player identities:
+
+- **Save** — snapshot the current MPID under a custom name
+- **Activate** — restore a saved MPID to the registry
+- **Rename** — rename a saved profile
+- **Remove** — delete a saved profile from the launcher
+- **Delete** — remove the MPID from the Windows Registry
+- **Import / Export** — share profiles as files
+
+### MPID Sync
+
+Synchronise your MPID profiles across multiple machines via a shared folder (NAS, VPN, or cloud-synced directory):
+
+- Configure a sync folder in the settings
+- On startup the launcher checks reachability and performs one automatic sync
+- Background status indicator: **online** · **offline** · **checking…** · **not configured**
+- Trigger additional syncs manually with the **Sync** button
+
+### Themes
+
+Six built-in colour themes to choose from:
+
+- Dark Blue (default)
+- Red
+- Yellow
+- Black
+- Light
+- Green
+
+### Language
+
+The launcher supports **German** and **English**. The language can be changed in the main window and is stored locally.
+
+## Requirements
+
+- Windows 10 / 11
+- Python 3.8+
+- [PySide6](https://pypi.org/project/PySide6/) >= 6.8, < 7.0
+- [pefile](https://pypi.org/project/pefile/) >= 2024.8.26
 
 ## Run locally
 
@@ -23,3 +69,24 @@ python -m venv .venv
 pip install -r requirements.txt
 python -m app.main
 ```
+
+## Build standalone executable
+
+```powershell
+pip install pyinstaller
+pyinstaller FL-Atlas-Launcher.spec
+```
+
+The output is written to `dist-x64/`.
+
+## Configuration
+
+All settings are stored in a local JSON file at:
+
+```
+~/.fl-atlas-launcher/config.json
+```
+
+## License
+
+This project is not open-source. All rights reserved.
