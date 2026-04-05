@@ -1340,6 +1340,7 @@ class MainWindow(QMainWindow):
                 self._get_trade_route_service(),
                 self.translator,
                 player_reputation=self._reputation_values_for_installation(installation.id),
+                selected_ship=self.config.selected_ships.get(installation.id, ""),
                 parent=self,
             )
         except OSError as error:
@@ -1349,12 +1350,17 @@ class MainWindow(QMainWindow):
                 self.tr("mod_file_missing_message", error=error),
             )
             return
+        dialog.ship_changed.connect(lambda nick, iid=installation.id: self._save_selected_ship(iid, nick))
         dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         dialog.destroyed.connect(lambda _obj=None, current=dialog: self._forget_trade_route_window(current))
         self._trade_route_windows.append(dialog)
         dialog.show()
         dialog.raise_()
         dialog.activateWindow()
+
+    def _save_selected_ship(self, installation_id: str, nickname: str) -> None:
+        self.config.selected_ships[installation_id] = nickname
+        self._persist_config()
 
     def _forget_trade_route_window(self, dialog: TradeRouteTabbedDialog) -> None:
         self._trade_route_windows = [window for window in self._trade_route_windows if window is not dialog]

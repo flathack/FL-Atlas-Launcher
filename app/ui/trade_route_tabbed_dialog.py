@@ -166,14 +166,18 @@ class _LoadingMixin:
 # ---------------------------------------------------------------------------
 
 class _InnerSystemTab(QWidget, _LoadingMixin):
+    ship_changed = Signal(str)
+
     def __init__(self, installation: Installation, service: TradeRouteService,
                  translator: Translator, player_reputation: dict[str, float],
+                 selected_ship: str = "",
                  parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.installation = installation
         self.trade_route_service = service
         self.translator = translator
         self.player_reputation = player_reputation
+        self._selected_ship = selected_ship
         self._routes: list[TradeRouteRow] = []
         self._preview_windows: list[TradeRoutePreviewDialog] = []
         self._worker_thread: QThread | None = None
@@ -238,19 +242,31 @@ class _InnerSystemTab(QWidget, _LoadingMixin):
 
     def _connect_signals(self) -> None:
         self.refresh_button.clicked.connect(self._refresh_routes)
-        self.ship_combo.currentIndexChanged.connect(lambda _: self._refresh_routes())
+        self.ship_combo.currentIndexChanged.connect(lambda _: self._on_ship_combo_changed())
         self.search_input.textChanged.connect(self._apply_filter)
 
     def _load_ships(self) -> None:
         options = self.trade_route_service.ship_options(self.installation)
         self.ship_combo.clear()
-        for option in options:
-            self.ship_combo.addItem(option.label, option.cargo_capacity)
+        selected_index = 0
+        for i, option in enumerate(options):
+            self.ship_combo.addItem(option.label, (option.nickname, option.cargo_capacity))
+            if option.nickname == self._selected_ship:
+                selected_index = i
+        if options:
+            self.ship_combo.setCurrentIndex(selected_index)
+
+    def _on_ship_combo_changed(self) -> None:
+        data = self.ship_combo.currentData()
+        if data:
+            self.ship_changed.emit(data[0])
+        self._refresh_routes()
 
     def _refresh_routes(self) -> None:
         if not self._started or self._worker_thread is not None:
             return
-        cargo_capacity = int(self.ship_combo.currentData() or 0)
+        data = self.ship_combo.currentData()
+        cargo_capacity = int(data[1]) if data else 0
         self._set_loading(True)
         self._worker_thread = QThread(self)
         worker = _InnerSystemWorker(self.trade_route_service, self.installation,
@@ -330,14 +346,18 @@ class _InnerSystemTab(QWidget, _LoadingMixin):
 # ---------------------------------------------------------------------------
 
 class _TradeRoutesTab(QWidget, _LoadingMixin):
+    ship_changed = Signal(str)
+
     def __init__(self, installation: Installation, service: TradeRouteService,
                  translator: Translator, player_reputation: dict[str, float],
+                 selected_ship: str = "",
                  parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.installation = installation
         self.trade_route_service = service
         self.translator = translator
         self.player_reputation = player_reputation
+        self._selected_ship = selected_ship
         self._routes: list[TradeRouteRow] = []
         self._preview_windows: list[TradeRoutePreviewDialog] = []
         self._worker_thread: QThread | None = None
@@ -410,7 +430,7 @@ class _TradeRoutesTab(QWidget, _LoadingMixin):
 
     def _connect_signals(self) -> None:
         self.refresh_button.clicked.connect(self._refresh_routes)
-        self.ship_combo.currentIndexChanged.connect(lambda _: self._refresh_routes())
+        self.ship_combo.currentIndexChanged.connect(lambda _: self._on_ship_combo_changed())
         self.jump_spin.valueChanged.connect(lambda _: self._refresh_routes())
         self.table.currentCellChanged.connect(self._update_path_label)
         self.search_input.textChanged.connect(self._apply_filter)
@@ -418,13 +438,25 @@ class _TradeRoutesTab(QWidget, _LoadingMixin):
     def _load_ships(self) -> None:
         options = self.trade_route_service.ship_options(self.installation)
         self.ship_combo.clear()
-        for option in options:
-            self.ship_combo.addItem(option.label, option.cargo_capacity)
+        selected_index = 0
+        for i, option in enumerate(options):
+            self.ship_combo.addItem(option.label, (option.nickname, option.cargo_capacity))
+            if option.nickname == self._selected_ship:
+                selected_index = i
+        if options:
+            self.ship_combo.setCurrentIndex(selected_index)
+
+    def _on_ship_combo_changed(self) -> None:
+        data = self.ship_combo.currentData()
+        if data:
+            self.ship_changed.emit(data[0])
+        self._refresh_routes()
 
     def _refresh_routes(self) -> None:
         if not self._started or self._worker_thread is not None:
             return
-        cargo_capacity = int(self.ship_combo.currentData() or 0)
+        data = self.ship_combo.currentData()
+        cargo_capacity = int(data[1]) if data else 0
         max_jumps = int(self.jump_spin.value())
         self._set_loading(True)
         self._worker_thread = QThread(self)
@@ -525,14 +557,18 @@ class _TradeRoutesTab(QWidget, _LoadingMixin):
 # ---------------------------------------------------------------------------
 
 class _RoundTripTab(QWidget, _LoadingMixin):
+    ship_changed = Signal(str)
+
     def __init__(self, installation: Installation, service: TradeRouteService,
                  translator: Translator, player_reputation: dict[str, float],
+                 selected_ship: str = "",
                  parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.installation = installation
         self.trade_route_service = service
         self.translator = translator
         self.player_reputation = player_reputation
+        self._selected_ship = selected_ship
         self._loops: list[TradeRouteLoopRow] = []
         self._detail_windows: list[TradeRouteRoundTripDetailDialog] = []
         self._worker_thread: QThread | None = None
@@ -608,7 +644,7 @@ class _RoundTripTab(QWidget, _LoadingMixin):
 
     def _connect_signals(self) -> None:
         self.refresh_button.clicked.connect(self._refresh_loops)
-        self.ship_combo.currentIndexChanged.connect(lambda _: self._refresh_loops())
+        self.ship_combo.currentIndexChanged.connect(lambda _: self._on_ship_combo_changed())
         self.jump_spin.valueChanged.connect(lambda _: self._refresh_loops())
         self.leg_spin.valueChanged.connect(lambda _: self._refresh_loops())
         self.table.currentCellChanged.connect(self._update_summary)
@@ -618,13 +654,25 @@ class _RoundTripTab(QWidget, _LoadingMixin):
     def _load_ships(self) -> None:
         options = self.trade_route_service.ship_options(self.installation)
         self.ship_combo.clear()
-        for option in options:
-            self.ship_combo.addItem(option.label, option.cargo_capacity)
+        selected_index = 0
+        for i, option in enumerate(options):
+            self.ship_combo.addItem(option.label, (option.nickname, option.cargo_capacity))
+            if option.nickname == self._selected_ship:
+                selected_index = i
+        if options:
+            self.ship_combo.setCurrentIndex(selected_index)
+
+    def _on_ship_combo_changed(self) -> None:
+        data = self.ship_combo.currentData()
+        if data:
+            self.ship_changed.emit(data[0])
+        self._refresh_loops()
 
     def _refresh_loops(self) -> None:
         if not self._started or self._worker_thread is not None:
             return
-        cargo_capacity = int(self.ship_combo.currentData() or 0)
+        data = self.ship_combo.currentData()
+        cargo_capacity = int(data[1]) if data else 0
         max_jumps = int(self.jump_spin.value())
         leg_count = int(self.leg_spin.value())
         self._set_loading(True)
@@ -732,6 +780,8 @@ class _RoundTripTab(QWidget, _LoadingMixin):
 # ---------------------------------------------------------------------------
 
 class TradeRouteTabbedDialog(QDialog):
+    ship_changed = Signal(str)
+
     def __init__(
         self,
         installation: Installation,
@@ -739,6 +789,7 @@ class TradeRouteTabbedDialog(QDialog):
         translator: Translator,
         *,
         player_reputation: dict[str, float] | None = None,
+        selected_ship: str = "",
         initial_tab: int = 0,
         parent: QWidget | None = None,
     ) -> None:
@@ -751,9 +802,13 @@ class TradeRouteTabbedDialog(QDialog):
         reputation = dict(player_reputation or {})
 
         self.tabs = QTabWidget()
-        self._inner_tab = _InnerSystemTab(installation, trade_route_service, translator, reputation, self)
-        self._routes_tab = _TradeRoutesTab(installation, trade_route_service, translator, reputation, self)
-        self._round_trip_tab = _RoundTripTab(installation, trade_route_service, translator, reputation, self)
+        self._inner_tab = _InnerSystemTab(installation, trade_route_service, translator, reputation, selected_ship, self)
+        self._routes_tab = _TradeRoutesTab(installation, trade_route_service, translator, reputation, selected_ship, self)
+        self._round_trip_tab = _RoundTripTab(installation, trade_route_service, translator, reputation, selected_ship, self)
+
+        self._inner_tab.ship_changed.connect(self._on_ship_changed)
+        self._routes_tab.ship_changed.connect(self._on_ship_changed)
+        self._round_trip_tab.ship_changed.connect(self._on_ship_changed)
 
         self.tabs.addTab(self._inner_tab, translator.text("trade_inner_system_open"))
         self.tabs.addTab(self._routes_tab, translator.text("trade_routes_open"))
@@ -775,3 +830,6 @@ class TradeRouteTabbedDialog(QDialog):
         tab = self.tabs.widget(index)
         if hasattr(tab, "start"):
             tab.start()
+
+    def _on_ship_changed(self, nickname: str) -> None:
+        self.ship_changed.emit(nickname)

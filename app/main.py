@@ -20,7 +20,7 @@ else:
     from .services.update_service import UpdateService
     from .ui.main_window import MainWindow
 
-APP_VERSION = "v0.3.1"
+APP_VERSION = "v0.3.2"
 SHOW_CHEAT_FEATURES = True
 
 

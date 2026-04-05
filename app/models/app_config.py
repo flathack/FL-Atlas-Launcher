@@ -14,6 +14,7 @@ class AppConfig:
     selected_resolution: str = ""
     last_installation_id: str = ""
     faction_reputations: dict[str, dict[str, float]] = field(default_factory=dict)
+    selected_ships: dict[str, str] = field(default_factory=dict)
     installations: list[Installation] = field(default_factory=list)
     mpid_profiles: list[MpidProfile] = field(default_factory=list)
     mpid_sync_path: str = ""
@@ -26,6 +27,7 @@ class AppConfig:
             "selected_resolution": self.selected_resolution,
             "last_installation_id": self.last_installation_id,
             "faction_reputations": self.faction_reputations,
+            "selected_ships": self.selected_ships,
             "installations": [installation.to_dict() for installation in self.installations],
             "mpid_profiles": [profile.to_dict() for profile in self.mpid_profiles],
             "mpid_sync_path": self.mpid_sync_path,
@@ -63,6 +65,11 @@ class AppConfig:
             selected_resolution=data.get("selected_resolution", ""),
             last_installation_id=str(data.get("last_installation_id", "")).strip(),
             faction_reputations=faction_reputations,
+            selected_ships={
+                str(k).strip(): str(v).strip()
+                for k, v in data.get("selected_ships", {}).items()
+                if isinstance(k, str) and isinstance(v, str)
+            },
             installations=installations,
             mpid_profiles=mpid_profiles,
             mpid_sync_path=str(data.get("mpid_sync_path", "")).strip(),
