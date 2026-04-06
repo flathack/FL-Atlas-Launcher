@@ -48,6 +48,7 @@ from app.services.mpid_service import MpidService
 from app.services.mpid_transfer_service import MpidTransferService
 from app.services.npc_rumor_service import NpcRumorService
 from app.services.process_service import ProcessService
+from app.services.remote_link_service import RemoteLinkService
 from app.services.resolution_service import ResolutionService
 from app.services.ship_render_service import ShipRenderService
 from app.services.trade_route_service import TradeRouteService
@@ -90,6 +91,7 @@ class MainWindow(QMainWindow):
         self.mpid_service = MpidService()
         self.transfer_service = MpidTransferService()
         self.process_service = ProcessService()
+        self.remote_link_service = RemoteLinkService(self.config_service.config_path.parent / "cache")
         self._is_loading_mpid_combo = False
         self._persistent_signals_connected = False
         self._is_loading_cheat_controls = False
@@ -170,6 +172,8 @@ class MainWindow(QMainWindow):
             self._apply_cheater_switch_style(False)
 
         help_menu = QMenu(self.help_button)
+        help_discord_action = help_menu.addAction(self.tr("help_open_discord"))
+        help_discord_action.triggered.connect(self._open_help_discord)
         help_wiki_action = help_menu.addAction(self.tr("help_open_wiki"))
         help_wiki_action.triggered.connect(self._open_help_wiki)
         self.help_button.setMenu(help_menu)
@@ -1493,3 +1497,8 @@ class MainWindow(QMainWindow):
 
     def _open_help_wiki(self) -> None:
         QDesktopServices.openUrl(QUrl(self.HELP_WIKI_URL))
+
+    def _open_help_discord(self) -> None:
+        discord_url = self.remote_link_service.discord_invite_url()
+        self.logger.info("Opening Discord URL: %s", discord_url)
+        QDesktopServices.openUrl(QUrl(discord_url))
