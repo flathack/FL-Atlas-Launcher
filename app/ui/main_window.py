@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import threading
 
-from PySide6.QtCore import QFileInfo, QObject, QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QEvent, QFileInfo, QObject, QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QAction, QBrush, QColor, QDesktopServices, QFont, QIcon, QPainter, QPen, QRadialGradient
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -80,8 +80,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.config_service = config_service
         self.app_version = app_version
-        self.show_cheat_features = bool(show_cheat_features)
         self.config = AppConfig.from_dict(config_service.config.to_dict())
+        self.show_cheat_features = bool(show_cheat_features or self.config.cheater_mode)
         self.translator = Translator(self.config.language)
         self.logger = logging.getLogger("fl_atlas.main_window")
         self.icon_provider = QFileIconProvider()
@@ -142,6 +142,12 @@ class MainWindow(QMainWindow):
         self.sync_timer.setInterval(self.SYNC_POLL_INTERVAL_MS)
         self.process_timer = QTimer(self)
         self.process_timer.setInterval(self.PROCESS_POLL_INTERVAL_MS)
+        self.cheat_toast_timer = QTimer(self)
+        self.cheat_toast_timer.setSingleShot(True)
+        from PySide6.QtWidgets import QApplication
+        app = QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self)
 
         self._build_ui()
         self._connect_signals()
@@ -269,6 +275,22 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(root)
         self.setStatusBar(QStatusBar())
         self.statusBar().showMessage(self.tr("config_status", path=self.config_service.config_path))
+        self.cheat_toast_label = QLabel(self.centralWidget())
+        self.cheat_toast_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.cheat_toast_label.setStyleSheet(
+            """
+            QLabel {
+                background-color: rgba(20, 20, 20, 220);
+                color: #f5f5f5;
+                border: 1px solid rgba(220, 220, 220, 90);
+                border-radius: 16px;
+                font-size: 18px;
+                font-weight: 700;
+                padding: 14px 24px;
+            }
+            """
+        )
+        self.cheat_toast_label.hide()
         self._update_cheat_panel_visibility()
 
     def _build_cheat_panel(self) -> QWidget:
@@ -440,7 +462,29 @@ class MainWindow(QMainWindow):
             self.sync_notifier.result_ready.connect(self._apply_sync_result)
             self.process_notifier.result_ready.connect(self._apply_process_state)
             self.cheat_sync_notifier.result_ready.connect(self._apply_cheat_sync_result)
+            self.cheat_toast_timer.timeout.connect(self._hide_cheat_activation_toast)
             self._persistent_signals_connected = True
+
+    def eventFilter(self, watched, event) -> bool:
+        if event.type() == QEvent.Type.KeyPress and self._is_cheat_toggle_event(event):
+            self._toggle_cheat_features_visibility()
+            return True
+        return super().eventFilter(watched, event)
+
+    def _is_cheat_toggle_event(self, event) -> bool:
+        if event.isAutoRepeat():
+            return False
+        modifiers = event.modifiers()
+        required = (
+            Qt.KeyboardModifier.ControlModifier
+            | Qt.KeyboardModifier.AltModifier
+            | Qt.KeyboardModifier.ShiftModifier
+        )
+        if (modifiers & required) != required:
+            return False
+        key_matches = event.key() == Qt.Key.Key_C
+        text_matches = event.text().lower() == "c"
+        return key_matches or text_matches
 
     def _populate_mpid_profiles(self) -> None:
         self._is_loading_mpid_combo = True
@@ -610,6 +654,11 @@ class MainWindow(QMainWindow):
     def _refresh_view(self) -> None:
         self.config = AppConfig.from_dict(self.config_service.load().to_dict())
         self.translator.set_language(self.config.language)
+        if self.show_cheat_features != bool(self.config.cheater_mode):
+            self.show_cheat_features = bool(self.config.cheater_mode)
+            self._rebuild_translated_ui()
+            self.statusBar().showMessage(self.tr("view_refreshed"), 3000)
+            return
         self._populate_mpid_profiles()
         self._populate_resolutions()
         self._populate_installations()
@@ -776,6 +825,50 @@ class MainWindow(QMainWindow):
             }}
             """
         )
+
+    def _toggle_cheat_features_visibility(self) -> None:
+        enabled = not self.show_cheat_features
+        self.show_cheat_features = enabled
+        self.config.cheater_mode = enabled
+        self._persist_config()
+        self.logger.info(
+            "Cheat features %s via shortcut Ctrl+Alt+Shift+C",
+            "enabled" if enabled else "disabled",
+        )
+        self._rebuild_translated_ui()
+        if enabled:
+            self._show_cheat_activation_toast()
+        self.statusBar().showMessage(
+            "Cheat features ON" if enabled else "Cheat features OFF",
+            4000,
+        )
+
+    def _show_cheat_activation_toast(self) -> None:
+        if not hasattr(self, "cheat_toast_label") or self.centralWidget() is None:
+            return
+        self.cheat_toast_label.setText(self.tr("cheat_mode_enabled_overlay"))
+        self.cheat_toast_label.adjustSize()
+        self._position_cheat_activation_toast()
+        self.cheat_toast_label.show()
+        self.cheat_toast_label.raise_()
+        self.cheat_toast_timer.start(5000)
+
+    def _hide_cheat_activation_toast(self) -> None:
+        if hasattr(self, "cheat_toast_label"):
+            self.cheat_toast_label.hide()
+
+    def _position_cheat_activation_toast(self) -> None:
+        if not hasattr(self, "cheat_toast_label") or self.centralWidget() is None:
+            return
+        parent = self.centralWidget()
+        label = self.cheat_toast_label
+        x = max(12, (parent.width() - label.width()) // 2)
+        y = max(12, (parent.height() - label.height()) // 2)
+        label.move(x, y)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._position_cheat_activation_toast()
 
     def _refresh_sync_state(self, trigger_sync: bool = True) -> None:
         if self._sync_worker_running:

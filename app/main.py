@@ -24,7 +24,6 @@ else:
     from .ui.main_window import MainWindow
 
 APP_VERSION = "v0.4.0"
-SHOW_CHEAT_FEATURES = True
 
 
 def _write_startup_log(error_text: str) -> Path:
@@ -77,7 +76,7 @@ def main() -> int:
         window = MainWindow(
             config_service=config_service,
             app_version=APP_VERSION,
-            show_cheat_features=SHOW_CHEAT_FEATURES,
+            show_cheat_features=False,
         )
         window.show()
         logger.info("Main window shown. Log file: %s", log_path)
