@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import math
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import QPointF, Qt
@@ -212,6 +213,12 @@ class ShipRenderService:
         self._icon_dir = cache_dir / "ship_icons"
         self._preview_dir = cache_dir / "ship_previews"
 
+    def icon_cache_path(self, nickname: str) -> Path:
+        return self._icon_dir / f"{nickname}.png"
+
+    def preview_cache_path(self, nickname: str) -> Path:
+        return self._preview_dir / f"{nickname}.png"
+
     def get_icon_path(
         self,
         game_root: Path,
@@ -221,7 +228,7 @@ class ShipRenderService:
         """Return the path to a cached 48×48 icon, rendering if needed."""
         if not da_archetype:
             return None
-        icon_path = self._icon_dir / f"{nickname}.png"
+        icon_path = self.icon_cache_path(nickname)
         if icon_path.exists():
             return icon_path
         return self._render_and_cache(game_root, nickname, da_archetype, icon_path, ICON_SIZE, transparent=True)
@@ -235,10 +242,61 @@ class ShipRenderService:
         """Return the path to a cached preview image, rendering if needed."""
         if not da_archetype:
             return None
-        preview_path = self._preview_dir / f"{nickname}.png"
+        preview_path = self.preview_cache_path(nickname)
         if preview_path.exists():
             return preview_path
         return self._render_and_cache(game_root, nickname, da_archetype, preview_path, PREVIEW_SIZE, transparent=False)
+
+    def ensure_ship_assets(
+        self,
+        game_root: Path,
+        nickname: str,
+        da_archetype: str,
+        *,
+        force: bool = False,
+        progress_callback: Callable[[int], None] | None = None,
+    ) -> tuple[Path | None, Path | None]:
+        """Ensure icon and preview exist, reporting coarse progress if requested."""
+        if not da_archetype:
+            if progress_callback is not None:
+                progress_callback(100)
+            return None, None
+
+        icon_path = self.icon_cache_path(nickname)
+        preview_path = self.preview_cache_path(nickname)
+        need_icon = force or not icon_path.exists()
+        need_preview = force or not preview_path.exists()
+        if not need_icon and not need_preview:
+            if progress_callback is not None:
+                progress_callback(100)
+            return icon_path, preview_path
+
+        model_path = self._resolve_model_path(game_root, da_archetype)
+        if model_path is None:
+            if progress_callback is not None:
+                progress_callback(100)
+            return (icon_path if icon_path.exists() else None, preview_path if preview_path.exists() else None)
+
+        triangles = _load_triangles(model_path)
+        if not triangles:
+            if progress_callback is not None:
+                progress_callback(100)
+            return (icon_path if icon_path.exists() else None, preview_path if preview_path.exists() else None)
+
+        if progress_callback is not None:
+            progress_callback(15)
+
+        if need_icon:
+            self._save_render(triangles, icon_path, ICON_SIZE, transparent=True)
+        if progress_callback is not None:
+            progress_callback(55)
+
+        if need_preview:
+            self._save_render(triangles, preview_path, PREVIEW_SIZE, transparent=False)
+        if progress_callback is not None:
+            progress_callback(100)
+
+        return (icon_path if icon_path.exists() else None, preview_path if preview_path.exists() else None)
 
     def _render_and_cache(
         self,
@@ -250,17 +308,55 @@ class ShipRenderService:
         *,
         transparent: bool,
     ) -> Path | None:
-        rel = da_archetype.replace("\\", "/")
-        model_path = game_root / "DATA" / rel
-        if not model_path.exists():
-            # Fallback: path might already include DATA or be relative to root
-            model_path = game_root / rel
-        if not model_path.exists():
+        model_path = self._resolve_model_path(game_root, da_archetype)
+        if model_path is None:
             return None
         triangles = _load_triangles(model_path)
         if not triangles:
             return None
+        self._save_render(triangles, out_path, size, transparent=transparent)
+        return out_path if out_path.exists() else None
+
+    def _resolve_model_path(self, game_root: Path, da_archetype: str) -> Path | None:
+        rel = da_archetype.replace("\\", "/")
+        model_path = game_root / "DATA" / rel
+        if model_path.exists():
+            return model_path
+        resolved = self._resolve_case_insensitive_path(game_root / "DATA", rel)
+        if resolved is not None:
+            return resolved
+        model_path = game_root / rel
+        if model_path.exists():
+            return model_path
+        resolved = self._resolve_case_insensitive_path(game_root, rel)
+        if resolved is not None:
+            return resolved
+        return None
+
+    def _resolve_case_insensitive_path(self, root: Path, relative_path: str) -> Path | None:
+        current = root
+        for part in [segment for segment in relative_path.split("/") if segment]:
+            if not current.exists() or not current.is_dir():
+                return None
+            next_path = current / part
+            if next_path.exists():
+                current = next_path
+                continue
+            lowered = part.casefold()
+            match = next((candidate for candidate in current.iterdir() if candidate.name.casefold() == lowered), None)
+            if match is None:
+                return None
+            current = match
+        return current if current.exists() else None
+
+    def _save_render(
+        self,
+        triangles: list[list[tuple[float, float, float]]],
+        out_path: Path,
+        size: int,
+        *,
+        transparent: bool,
+    ) -> None:
         image = _render_to_image(triangles, size, transparent=transparent)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         image.save(str(out_path), "PNG")
-        return out_path

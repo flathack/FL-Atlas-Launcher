@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QLabel,
     QMessageBox,
+    QProgressBar,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -54,6 +55,29 @@ class _IconLoaderWorker(QObject):
         self.finished.emit()
 
 
+class _ShipAssetRenderWorker(QObject):
+    progress_changed = Signal(int)
+    finished = Signal(str, str)
+
+    def __init__(self, ship: ShipInfoRow, game_root: Path, render_service: ShipRenderService) -> None:
+        super().__init__()
+        self._ship = ship
+        self._game_root = game_root
+        self._render_service = render_service
+
+    def run(self) -> None:
+        icon_path, preview_path = self._render_service.ensure_ship_assets(
+            self._game_root,
+            self._ship.nickname,
+            self._ship.da_archetype,
+            progress_callback=self.progress_changed.emit,
+        )
+        self.finished.emit(
+            str(icon_path) if icon_path is not None else "",
+            str(preview_path) if preview_path is not None else "",
+        )
+
+
 class ShipInfoDialog(QDialog):
     def __init__(
         self,
@@ -71,6 +95,8 @@ class ShipInfoDialog(QDialog):
         self._game_root: Path | None = None
         self._ship_rows: list[ShipInfoRow] = []
         self._icon_thread: QThread | None = None
+        self._render_thread: QThread | None = None
+        self._render_worker: _ShipAssetRenderWorker | None = None
         try:
             self._game_root = cheat_service.resolve_game_root(installation)
         except OSError:
@@ -83,6 +109,13 @@ class ShipInfoDialog(QDialog):
         self.info_label.setWordWrap(True)
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText(self.tr("ship_info_search_placeholder"))
+        self.category_combo = QComboBox()
+        self.generate_button = QPushButton(self.tr("ship_preview_generate"))
+        self.generate_button.setProperty("variant", "primary")
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setVisible(False)
 
         self.table = QTableWidget(0, 5)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -117,29 +150,40 @@ class ShipInfoDialog(QDialog):
         return self.translator.text(key, **kwargs)
 
     def _build_ui(self) -> None:
+        toolbar = QHBoxLayout()
+        toolbar.addWidget(self.info_label, 2)
+        toolbar.addWidget(self.search_edit, 2)
+        toolbar.addWidget(self.category_combo, 1)
+        toolbar.addWidget(self.generate_button)
+        toolbar.addWidget(self.reload_button)
+
         root_layout = QVBoxLayout(self)
-        root_layout.addWidget(self.info_label)
-        root_layout.addWidget(self.search_edit)
+        root_layout.addLayout(toolbar)
+        root_layout.addWidget(self.progress_bar)
         root_layout.addWidget(self.table, 1)
-        root_layout.addWidget(self.reload_button)
         root_layout.addWidget(self.button_box)
 
     def _connect_signals(self) -> None:
         self.reload_button.clicked.connect(self._load_profiles)
         self.search_edit.textChanged.connect(self._apply_filter)
+        self.category_combo.currentIndexChanged.connect(self._apply_filter)
+        self.generate_button.clicked.connect(self._generate_selected_ship_assets)
         self.table.itemDoubleClicked.connect(lambda _: self._open_ship_preview())
+        self.table.currentCellChanged.connect(lambda *_args: self._update_action_state())
         self.button_box.rejected.connect(self.reject)
 
     def _load_profiles(self) -> None:
         self._stop_icon_loader()
         self._ship_rows = self.cheat_service.ship_info_rows(self.installation)
         profiles = self._ship_rows
+        self._populate_category_filter(profiles)
 
         self.table.setRowCount(len(profiles))
         icon_jobs: list[tuple[int, str, str]] = []
         for row, profile in enumerate(profiles):
             item = QTableWidgetItem(self._display_text(profile))
             item.setData(Qt.ItemDataRole.UserRole, profile.nickname)
+            item.setData(Qt.ItemDataRole.UserRole + 1, profile.ship_type.strip().upper())
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(row, 0, item)
             if profile.da_archetype:
@@ -164,9 +208,12 @@ class ShipInfoDialog(QDialog):
             price_item.setFlags(price_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(row, 4, price_item)
 
-        self._apply_filter(self.search_edit.text())
+        self._apply_filter()
         self.table.resizeRowsToContents()
         self._start_icon_loader(icon_jobs)
+        if profiles:
+            self.table.setCurrentCell(0, 0)
+        self._update_action_state()
 
     def _start_icon_loader(self, jobs: list[tuple[int, str, str]]) -> None:
         if not jobs or not self._ship_render_service or not self._game_root:
@@ -195,17 +242,40 @@ class ShipInfoDialog(QDialog):
         if item is not None:
             item.setIcon(QIcon(icon_path))
 
-    def _apply_filter(self, text: str) -> None:
-        query = text.strip().lower()
+    def _populate_category_filter(self, profiles: list[ShipInfoRow]) -> None:
+        current_category = str(self.category_combo.currentData() or "")
+        categories: list[tuple[str, str]] = [("", self.tr("ship_info_category_all"))]
+        seen_categories: set[str] = set()
+        for profile in profiles:
+            ship_type = profile.ship_type.strip().upper()
+            if not ship_type or ship_type in seen_categories:
+                continue
+            seen_categories.add(ship_type)
+            categories.append((ship_type, self._ship_type_label(ship_type)))
+
+        self.category_combo.blockSignals(True)
+        self.category_combo.clear()
+        for value, label in categories:
+            self.category_combo.addItem(label, value)
+        restore_index = max(0, self.category_combo.findData(current_category))
+        self.category_combo.setCurrentIndex(restore_index)
+        self.category_combo.blockSignals(False)
+
+    def _apply_filter(self, _value: object = None) -> None:
+        query = self.search_edit.text().strip().lower()
+        category = str(self.category_combo.currentData() or "").strip().upper()
         for row in range(self.table.rowCount()):
             ship_item = self.table.item(row, 0)
             location_item = self.table.item(row, 3)
+            row_category = str(ship_item.data(Qt.ItemDataRole.UserRole + 1) or "").strip().upper() if ship_item is not None else ""
             display_text = ship_item.text().lower() if ship_item is not None else ""
             nickname = str(ship_item.data(Qt.ItemDataRole.UserRole) or "").lower() if ship_item is not None else ""
             locations = location_item.text().lower() if location_item is not None else ""
+            category_hidden = bool(category and row_category != category)
+            query_hidden = bool(query and query not in display_text and query not in nickname and query not in locations)
             self.table.setRowHidden(
                 row,
-                bool(query and query not in display_text and query not in nickname and query not in locations),
+                category_hidden or query_hidden,
             )
 
     def _ship_icon(self, profile: ShipInfoRow) -> QIcon | None:
@@ -229,12 +299,80 @@ class ShipInfoDialog(QDialog):
         dialog.show()
         dialog.raise_()
 
+    def _selected_ship(self) -> ShipInfoRow | None:
+        current_row = self.table.currentRow()
+        if current_row < 0 or current_row >= len(self._ship_rows):
+            return None
+        return self._ship_rows[current_row]
+
+    def _update_action_state(self) -> None:
+        ship = self._selected_ship()
+        can_generate = (
+            ship is not None
+            and bool(ship.da_archetype)
+            and self._ship_render_service is not None
+            and self._game_root is not None
+            and self._render_thread is None
+        )
+        self.generate_button.setEnabled(can_generate)
+
+    def _generate_selected_ship_assets(self) -> None:
+        ship = self._selected_ship()
+        if (
+            ship is None
+            or not ship.da_archetype
+            or self._ship_render_service is None
+            or self._game_root is None
+            or self._render_thread is not None
+        ):
+            return
+
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setValue(0)
+        self.generate_button.setEnabled(False)
+        self.generate_button.setText(self.tr("ship_preview_generating"))
+
+        self._render_thread = QThread(self)
+        self._render_worker = _ShipAssetRenderWorker(ship, self._game_root, self._ship_render_service)
+        self._render_worker.moveToThread(self._render_thread)
+        self._render_thread.started.connect(self._render_worker.run)
+        self._render_worker.progress_changed.connect(self.progress_bar.setValue)
+        self._render_worker.finished.connect(self._on_ship_assets_generated)
+        self._render_worker.finished.connect(self._render_thread.quit)
+        self._render_worker.finished.connect(self._render_worker.deleteLater)
+        self._render_thread.finished.connect(self._render_thread.deleteLater)
+        self._render_thread.finished.connect(self._clear_render_state)
+        self._render_thread.start()
+
+    def _on_ship_assets_generated(self, icon_path: str, _preview_path: str) -> None:
+        self.progress_bar.setValue(100)
+        current_row = self.table.currentRow()
+        if icon_path and current_row >= 0:
+            item = self.table.item(current_row, 0)
+            if item is not None:
+                item.setIcon(QIcon(icon_path))
+
+    def _clear_render_state(self) -> None:
+        self._render_thread = None
+        self._render_worker = None
+        self.generate_button.setText(self.tr("ship_preview_generate"))
+        self.progress_bar.setVisible(False)
+        self._update_action_state()
+
     def _display_text(self, profile: object) -> str:
         display_name = str(getattr(profile, "display_name", "") or "").strip()
         nickname = str(getattr(profile, "nickname", "") or "").strip()
         if not display_name or display_name.lower() == nickname.lower():
             return nickname
         return f"{display_name} ({nickname})"
+
+    def _ship_type_label(self, ship_type: str) -> str:
+        normalized = ship_type.strip().upper()
+        if not normalized:
+            return self.tr("ship_type_unknown")
+        key = f"ship_type_{normalized}"
+        label = self.tr(key)
+        return normalized.title() if label == key else label
 
 
 class ShipHandlingDialog(QDialog):
@@ -317,6 +455,7 @@ class ShipHandlingDialog(QDialog):
         for row, profile in enumerate(profiles):
             item = QTableWidgetItem(self._display_text(profile))
             item.setData(Qt.ItemDataRole.UserRole, profile.nickname)
+            item.setData(Qt.ItemDataRole.UserRole + 1, profile.ship_type.strip().upper())
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(row, 0, item)
 
@@ -362,6 +501,7 @@ class ShipHandlingDialog(QDialog):
         if not display_name or display_name.lower() == nickname.lower():
             return nickname
         return f"{display_name} ({nickname})"
+
 
     def _apply_mappings(self) -> None:
         try:
