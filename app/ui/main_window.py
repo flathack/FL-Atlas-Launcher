@@ -238,17 +238,16 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(18)
 
-        mpid_row = QWidget()
-        mpid_layout = QHBoxLayout(mpid_row)
-        mpid_layout.setContentsMargins(0, 0, 0, 0)
-        mpid_layout.addWidget(QLabel(self.tr("multiplayer_id")))
-        mpid_layout.addWidget(self.mpid_combo, 1)
-
-        resolution_row = QWidget()
-        resolution_layout = QHBoxLayout(resolution_row)
-        resolution_layout.setContentsMargins(0, 0, 0, 0)
-        resolution_layout.addWidget(QLabel(self.tr("resolution")))
-        resolution_layout.addWidget(self.resolution_combo, 1)
+        action_row = QWidget()
+        action_layout = QHBoxLayout(action_row)
+        action_layout.setContentsMargins(0, 0, 0, 0)
+        action_layout.setSpacing(12)
+        action_layout.addWidget(QLabel(self.tr("multiplayer_id")))
+        action_layout.addWidget(self.mpid_combo, 2)
+        action_layout.addWidget(QLabel(self.tr("resolution")))
+        action_layout.addWidget(self.resolution_combo, 1)
+        self.launch_button.setMinimumWidth(180)
+        action_layout.addWidget(self.launch_button)
 
         self.cheat_sync_progress = QProgressBar()
         self.cheat_sync_progress.setMinimum(0)
@@ -266,11 +265,9 @@ class MainWindow(QMainWindow):
             self.cheat_panel = self._build_cheat_panel()
             content_layout.addWidget(self.cheat_panel)
 
-        layout.addWidget(mpid_row)
         layout.addWidget(self.cheat_sync_progress)
         layout.addWidget(content_row, 1)
-        layout.addWidget(resolution_row)
-        layout.addWidget(self.launch_button)
+        layout.addWidget(action_row)
 
         self.setCentralWidget(root)
         self.setStatusBar(QStatusBar())
@@ -420,6 +417,11 @@ class MainWindow(QMainWindow):
         c = THEMES[self.config.theme]
         chunk_color = "#39d353" if active else c.border
         groove_color = c.border if active else c.alternate_base
+        if active:
+            self.cheat_sync_progress.setRange(0, 0)
+        else:
+            self.cheat_sync_progress.setRange(0, 100)
+            self.cheat_sync_progress.setValue(0)
         self.cheat_sync_progress.setStyleSheet(
             f"""
             QProgressBar {{
