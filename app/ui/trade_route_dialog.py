@@ -26,6 +26,14 @@ from app.services.trade_route_service import TradeRouteRow, TradeRouteService
 from app.ui.trade_route_preview_dialog import TradeRoutePreviewDialog
 
 
+_MAX_TABLE_TEXT_LENGTH = 30
+
+
+def _truncate_table_text(value: object, max_length: int = _MAX_TABLE_TEXT_LENGTH) -> str:
+    text = str(value)
+    return text if len(text) <= max_length else f"{text[:max_length - 1]}…"
+
+
 class _RouteWorker(QObject):
     finished = Signal(list)
     progress = Signal(int)
@@ -217,7 +225,9 @@ class TradeRouteDialog(QDialog):
                 f"{route.total_profit:,}".replace(",", ".") + " $",
             ]
             for offset, value in enumerate(values, start=1):
-                item = QTableWidgetItem(value)
+                full_text = str(value)
+                item = QTableWidgetItem(_truncate_table_text(full_text))
+                item.setToolTip(full_text)
                 if offset in {5, 6, 7, 8}:
                     item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 item.setData(Qt.ItemDataRole.UserRole, route)

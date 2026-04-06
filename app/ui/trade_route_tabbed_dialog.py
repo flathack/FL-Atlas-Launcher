@@ -38,6 +38,20 @@ from app.ui.trade_route_preview_dialog import TradeRoutePreviewDialog
 from app.ui.trade_route_round_trip_detail_dialog import TradeRouteRoundTripDetailDialog
 
 
+_MAX_TABLE_TEXT_LENGTH = 30
+_MAX_ROUND_TRIP_TEXT_LENGTH = 60
+
+
+def _truncate_table_text(value: object, max_length: int = _MAX_TABLE_TEXT_LENGTH) -> str:
+    text = str(value)
+    return text if len(text) <= max_length else f"{text[:max_length - 1]}…"
+
+
+def _truncate_round_trip_text(value: object, max_length: int = _MAX_ROUND_TRIP_TEXT_LENGTH) -> str:
+    text = str(value)
+    return text if len(text) <= max_length else f"{text[:max_length - 1]}…"
+
+
 # ---------------------------------------------------------------------------
 #  Workers
 # ---------------------------------------------------------------------------
@@ -375,7 +389,9 @@ class _InnerSystemTab(QWidget, _LoadingMixin):
                 f"{route.total_profit:,}".replace(",", ".") + " $",
             ]
             for offset, value in enumerate(values, start=1):
-                item = QTableWidgetItem(value)
+                full_text = str(value)
+                item = QTableWidgetItem(_truncate_table_text(full_text))
+                item.setToolTip(full_text)
                 if offset in {5, 6, 7}:
                     item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 item.setData(Qt.ItemDataRole.UserRole, route)
@@ -632,7 +648,9 @@ class _TradeRoutesTab(QWidget, _LoadingMixin):
                 f"{route.total_profit:,}".replace(",", ".") + " $",
             ]
             for offset, value in enumerate(values, start=1):
-                item = QTableWidgetItem(value)
+                full_text = str(value)
+                item = QTableWidgetItem(_truncate_table_text(full_text))
+                item.setToolTip(full_text)
                 if offset in {5, 6, 7, 8}:
                     item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 item.setData(Qt.ItemDataRole.UserRole, route)
@@ -905,7 +923,9 @@ class _RoundTripTab(QWidget, _LoadingMixin):
                 f"{loop.total_profit:,}".replace(",", ".") + " $",
             ]
             for column, value in enumerate(values):
-                item = QTableWidgetItem(value)
+                full_text = str(value)
+                item = QTableWidgetItem(_truncate_round_trip_text(full_text))
+                item.setToolTip(full_text)
                 if column in {3, 4}:
                     item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 item.setData(Qt.ItemDataRole.UserRole, loop)

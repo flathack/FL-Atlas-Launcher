@@ -22,6 +22,14 @@ from app.services.trade_route_service import TradeRouteLoopRow, TradeRouteRow, T
 from app.ui.widgets.trade_route_preview_widget import TradeRoutePreviewWidget
 
 
+_MAX_TABLE_TEXT_LENGTH = 60
+
+
+def _truncate_table_text(value: object, max_length: int = _MAX_TABLE_TEXT_LENGTH) -> str:
+    text = str(value)
+    return text if len(text) <= max_length else f"{text[:max_length - 1]}…"
+
+
 class TradeRouteRoundTripDetailDialog(QDialog):
     def __init__(
         self,
@@ -133,7 +141,9 @@ class TradeRouteRoundTripDetailDialog(QDialog):
                 f"{leg.total_profit:,}".replace(",", ".") + " $",
             ]
             for column, value in enumerate(values):
-                item = QTableWidgetItem(value)
+                full_text = str(value)
+                item = QTableWidgetItem(_truncate_table_text(full_text))
+                item.setToolTip(full_text)
                 if column in {4, 5, 6, 7}:
                     item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 item.setData(Qt.ItemDataRole.UserRole, leg)
