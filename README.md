@@ -88,6 +88,15 @@ pyinstaller FL-Atlas-Launcher.spec
 
 The output is written to `dist-x64/`.
 
+On Linux:
+
+```bash
+chmod +x scripts/build-linux.sh
+./scripts/build-linux.sh
+```
+
+The Linux bundle is written to `dist-linux/FL-Atlas-Launcher/`.
+
 ## Configuration
 
 All settings are stored in a local JSON file at:

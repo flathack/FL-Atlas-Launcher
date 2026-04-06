@@ -10,4 +10,5 @@ build/
 build-x64-lean/
 build-x64/
 *.spec
+!FL-Atlas-Launcher.spec
 release-assets/
