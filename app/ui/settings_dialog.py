@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 
 from app.i18n import Translator
 from app.models.installation import Installation
+from app.services.exe_icon_service import ExeIconService
 from app.services.ini_service import IniService
 from app.services.path_mapping_service import PathMappingService
 from app.themes import THEMES, THEME_DISPLAY_NAMES
@@ -59,6 +60,7 @@ class SettingsDialog(QDialog):
         self._is_loading = False
         self.ini_service = IniService()
         self.path_mapping_service = PathMappingService()
+        self.exe_icon_service = ExeIconService()
         self._current_language = current_language
         self._current_theme = current_theme
 
@@ -241,9 +243,20 @@ class SettingsDialog(QDialog):
             self._add_installation()
 
     def _build_list_item(self, installation: Installation) -> QListWidgetItem:
-        item = QListWidgetItem(installation.name or self.tr("new_installation"))
+        item = QListWidgetItem(self._icon_for_installation(installation), installation.name or self.tr("new_installation"))
         item.setData(Qt.ItemDataRole.UserRole, installation.id)
         return item
+
+    def _icon_for_installation(self, installation: Installation) -> QIcon:
+        resolved_path = self.path_mapping_service.resolve_path(installation.exe_path, installation.prefix_path)
+        icon = None
+        if resolved_path is not None:
+            icon = self.exe_icon_service.icon_for_executable(resolved_path)
+        if installation.launch_method.strip().lower() == "lutris":
+            icon = icon or self.exe_icon_service.icon_for_lutris_slug(installation.runner_target)
+        if icon is not None:
+            return icon
+        return self.style().standardIcon(self.style().StandardPixmap.SP_ComputerIcon)
 
     def _add_installation(self) -> None:
         installation = Installation.create(name=self.tr("new_installation"), exe_path="")
@@ -315,6 +328,7 @@ class SettingsDialog(QDialog):
         installation.launch_arguments = self.launch_arguments_edit.text().strip()
         installation.perf_options_path = self.perf_path_edit.text().strip()
         self.installation_list.item(row).setText(installation.name)
+        self.installation_list.item(row).setIcon(self._icon_for_installation(installation))
         self.perf_path_edit.setPlaceholderText(str(self.ini_service.default_perf_options_path(installation)))
 
     def _on_launch_method_changed(self) -> None:

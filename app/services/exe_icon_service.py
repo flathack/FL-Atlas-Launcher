@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QIcon, QPainter, QPixmap
 
 try:
     import pefile
@@ -38,6 +39,35 @@ class ExeIconService:
 
         self._cache[cache_key] = icon
         return icon
+
+    def icon_for_lutris_slug(self, slug: str) -> QIcon | None:
+        normalized = str(slug or "").strip()
+        if not normalized:
+            return None
+
+        cache_key = (f"lutris:{normalized}", 0, 0)
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        lutris_root = Path.home() / ".local" / "share" / "lutris"
+        candidates = [
+            lutris_root / "coverart" / f"{normalized}.png",
+            lutris_root / "coverart" / f"{normalized}.jpg",
+            lutris_root / "coverart" / f"{normalized}.jpeg",
+            lutris_root / "banners" / f"{normalized}.png",
+            lutris_root / "banners" / f"{normalized}.jpg",
+            lutris_root / "banners" / f"{normalized}.jpeg",
+        ]
+        for candidate in candidates:
+            if not candidate.exists():
+                continue
+            icon = self._icon_from_artwork(candidate)
+            if icon.isNull():
+                continue
+            self._cache[cache_key] = icon
+            return icon
+        return None
 
     def _extract_icon(self, exe_path: Path) -> QIcon | None:
         fallback_icon = self._load_bottles_cached_icon(exe_path)
@@ -159,12 +189,19 @@ class ExeIconService:
             return None
 
         icon_dir = bottle_root / "icons"
+        if not icon_dir.exists():
+            return None
         stem = exe_path.stem
         candidates = [
             icon_dir / f"{stem}.png",
             icon_dir / f"_{stem}.png.ico",
             icon_dir / f"{stem}.ico",
         ]
+        # Bottles often stores only one or two generated icons for the whole bottle.
+        # If the executable name does not match exactly (for example GameLauncher.exe),
+        # fall back to the first usable bottle icon instead of showing a generic icon.
+        candidates.extend(sorted(icon_dir.glob("*.png")))
+        candidates.extend(sorted(icon_dir.glob("*.ico")))
         for candidate in candidates:
             if not candidate.exists():
                 continue
@@ -178,3 +215,25 @@ class ExeIconService:
             if (current / "bottle.yml").exists():
                 return current
         return None
+
+    def _icon_from_artwork(self, artwork_path: Path, canvas_size: int = 256) -> QIcon:
+        source = QPixmap(str(artwork_path))
+        if source.isNull():
+            return QIcon()
+
+        canvas = QPixmap(canvas_size, canvas_size)
+        canvas.fill(Qt.GlobalColor.transparent)
+
+        fitted = source.scaled(
+            canvas_size,
+            canvas_size,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+
+        painter = QPainter(canvas)
+        x = (canvas_size - fitted.width()) // 2
+        y = (canvas_size - fitted.height()) // 2
+        painter.drawPixmap(x, y, fitted)
+        painter.end()
+        return QIcon(canvas)

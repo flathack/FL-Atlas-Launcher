@@ -503,10 +503,14 @@ class MainWindow(QMainWindow):
 
     def _icon_for_installation(self, installation: Installation) -> QIcon:
         exe_path = self.launcher_service.resolve_executable_path(installation)
-        base_icon: QIcon
+        base_icon = QIcon()
         if exe_path.exists():
-            base_icon = self.exe_icon_service.icon_for_executable(exe_path) or self.icon_provider.icon(QFileInfo(str(exe_path)))
-        else:
+            base_icon = self.exe_icon_service.icon_for_executable(exe_path) or QIcon()
+        if base_icon.isNull() and installation.launch_method.strip().lower() == "lutris":
+            base_icon = self.exe_icon_service.icon_for_lutris_slug(installation.runner_target) or QIcon()
+        if base_icon.isNull() and exe_path.exists():
+            base_icon = self.icon_provider.icon(QFileInfo(str(exe_path)))
+        if base_icon.isNull():
             base_icon = self.style().standardIcon(self.style().StandardPixmap.SP_ComputerIcon)
 
         if installation.cheater_mode_enabled:
