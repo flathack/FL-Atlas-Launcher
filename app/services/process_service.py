@@ -143,20 +143,56 @@ class ProcessService:
         resolved_path = self.path_mapping_service.resolve_path(installation.exe_path, installation.prefix_path)
         executable_path = str(resolved_path).lower() if resolved_path is not None else ""
         executable_name = Path(executable_path).name.lower()
+        method = installation.launch_method.strip().lower()
+        specific_fragments = self._specific_path_fragments(installation, resolved_path)
         if executable_path and executable_path in normalized_command:
             return True
-        if executable_name and executable_name in normalized_command and "freelancer" in executable_name:
+        if method == "bottles":
+            return False
+        if executable_name and executable_name in normalized_command and specific_fragments:
+            if any(fragment in normalized_command for fragment in specific_fragments):
+                return True
+        if executable_name and executable_name in normalized_command and "freelancer" in executable_name and not specific_fragments:
             return True
 
-        method = installation.launch_method.strip().lower()
         target = installation.runner_target.strip().lower()
-        if method == "bottles" and target:
-            return target in normalized_command and "bottles" in normalized_command
         if method == "steam" and target:
             return target in normalized_command and "steam" in normalized_command
         if method == "lutris" and target:
             return target in normalized_command and "lutris" in normalized_command
         return False
+
+    def _specific_path_fragments(self, installation: Installation, resolved_path: Path | None) -> list[str]:
+        if resolved_path is None:
+            return []
+        prefix_path = self.path_mapping_service.resolve_path(installation.prefix_path)
+        relative_parts = resolved_path.parts
+        if prefix_path is not None:
+            try:
+                relative_parts = resolved_path.relative_to(prefix_path).parts
+            except ValueError:
+                pass
+        ignored_parts = {
+            "",
+            "drive_c",
+            "exe",
+            "exe2",
+            "games",
+            "windows",
+            "system32",
+            "program files",
+            "program files (x86)",
+        }
+        fragments: list[str] = []
+        for part in reversed(relative_parts[:-1]):
+            normalized_part = part.strip().lower()
+            if normalized_part in ignored_parts or len(normalized_part) < 3:
+                continue
+            if normalized_part not in fragments:
+                fragments.append(normalized_part)
+            if len(fragments) >= 4:
+                break
+        return fragments
 
     def _run_powershell(self, commands: list[str]) -> str:
         completed = subprocess.run(
