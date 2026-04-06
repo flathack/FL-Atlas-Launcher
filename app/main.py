@@ -46,13 +46,12 @@ def _show_startup_error(message: str, log_path: Path) -> None:
 
 
 def _read_theme_before_app() -> str:
-    """Read theme from config without QApplication (avoids QStandardPaths)."""
-    config_path = Path.home() / ".fl-atlas-launcher" / "config.json"
+    """Read theme from the same config location as ConfigService before QApplication exists."""
+    config_path = ConfigService.config_path_without_qt()
     if not config_path.exists():
-        # Try the Roaming AppData path Qt would use
-        appdata = Path.home() / "AppData" / "Roaming" / "FL Atlas" / "FL Atlas Launcher" / "config.json"
-        if appdata.exists():
-            config_path = appdata
+        legacy_path = ConfigService.legacy_config_path()
+        if legacy_path.exists():
+            config_path = legacy_path
     if config_path.exists():
         try:
             data = json.loads(config_path.read_text(encoding="utf-8"))
