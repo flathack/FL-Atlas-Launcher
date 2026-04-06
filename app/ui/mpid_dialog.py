@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QTabWidget,
     QTableWidget,
     QTableWidgetItem,
     QTreeWidget,
@@ -65,6 +66,7 @@ class MpidDialog(QDialog):
         self.registry_location_label.setWordWrap(True)
         self.profile_list = QListWidget()
         self.profile_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.details_tabs = QTabWidget()
         self.server_details_label = QLabel(self.tr("mpid_server_characters"))
         self.server_tree = QTreeWidget()
         self.server_tree.setColumnCount(2)
@@ -99,6 +101,10 @@ class MpidDialog(QDialog):
         self.add_character_button = QPushButton(self.tr("add_character"))
         self.rename_entry_button = QPushButton(self.tr("rename_entry"))
         self.delete_entry_button = QPushButton(self.tr("delete_entry"))
+        self.profile_actions = QWidget()
+        self.profile_actions_layout = QGridLayout(self.profile_actions)
+        self.server_actions = QWidget()
+        self.server_actions_layout = QGridLayout(self.server_actions)
         self.button_box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
@@ -189,10 +195,23 @@ class MpidDialog(QDialog):
         details_layout = QVBoxLayout(details)
         details_layout.setContentsMargins(0, 0, 0, 0)
         details_layout.setSpacing(8)
-        details_layout.addWidget(self.server_details_label)
-        details_layout.addWidget(self.server_tree, 1)
-        details_layout.addWidget(self.value_details_label)
-        details_layout.addWidget(self.value_table, 1)
+        server_tab = QWidget()
+        server_tab_layout = QVBoxLayout(server_tab)
+        server_tab_layout.setContentsMargins(0, 0, 0, 0)
+        server_tab_layout.setSpacing(8)
+        server_tab_layout.addWidget(self.server_details_label)
+        server_tab_layout.addWidget(self.server_tree, 1)
+
+        values_tab = QWidget()
+        values_tab_layout = QVBoxLayout(values_tab)
+        values_tab_layout.setContentsMargins(0, 0, 0, 0)
+        values_tab_layout.setSpacing(8)
+        values_tab_layout.addWidget(self.value_details_label)
+        values_tab_layout.addWidget(self.value_table, 1)
+
+        self.details_tabs.addTab(server_tab, self.tr("mpid_tab_servers"))
+        self.details_tabs.addTab(values_tab, self.tr("mpid_tab_id_data"))
+        details_layout.addWidget(self.details_tabs, 1)
         content_layout.addWidget(details, 2)
         root.addWidget(content, 1)
 
@@ -201,19 +220,31 @@ class MpidDialog(QDialog):
         actions_layout.setContentsMargins(0, 0, 0, 0)
         actions_layout.setHorizontalSpacing(10)
         actions_layout.setVerticalSpacing(10)
-        actions_layout.addWidget(self.capture_button, 0, 0, 1, 2)
-        actions_layout.addWidget(self.apply_button, 0, 2, 1, 2)
-        actions_layout.addWidget(self.import_button, 1, 0)
-        actions_layout.addWidget(self.export_button, 1, 1)
-        actions_layout.addWidget(self.rename_button, 1, 2)
-        actions_layout.addWidget(self.delete_button, 1, 3)
-        actions_layout.addWidget(self.regenerate_button, 1, 4)
-        actions_layout.addWidget(self.add_server_button, 2, 0)
-        actions_layout.addWidget(self.add_character_button, 2, 1)
-        actions_layout.addWidget(self.rename_entry_button, 2, 2)
-        actions_layout.addWidget(self.delete_entry_button, 2, 3)
+        self.profile_actions_layout.setContentsMargins(0, 0, 0, 0)
+        self.profile_actions_layout.setHorizontalSpacing(10)
+        self.profile_actions_layout.setVerticalSpacing(10)
+        self.profile_actions_layout.addWidget(self.capture_button, 0, 0, 1, 2)
+        self.profile_actions_layout.addWidget(self.apply_button, 0, 2, 1, 2)
+        self.profile_actions_layout.addWidget(self.import_button, 1, 0)
+        self.profile_actions_layout.addWidget(self.export_button, 1, 1)
+        self.profile_actions_layout.addWidget(self.rename_button, 1, 2)
+        self.profile_actions_layout.addWidget(self.delete_button, 1, 3)
+        self.profile_actions_layout.addWidget(self.regenerate_button, 1, 4)
         for column in range(5):
-            actions_layout.setColumnStretch(column, 1)
+            self.profile_actions_layout.setColumnStretch(column, 1)
+
+        self.server_actions_layout.setContentsMargins(0, 0, 0, 0)
+        self.server_actions_layout.setHorizontalSpacing(10)
+        self.server_actions_layout.setVerticalSpacing(10)
+        self.server_actions_layout.addWidget(self.add_server_button, 0, 0)
+        self.server_actions_layout.addWidget(self.add_character_button, 0, 1)
+        self.server_actions_layout.addWidget(self.rename_entry_button, 0, 2)
+        self.server_actions_layout.addWidget(self.delete_entry_button, 0, 3)
+        for column in range(4):
+            self.server_actions_layout.setColumnStretch(column, 1)
+
+        actions_layout.addWidget(self.profile_actions, 0, 0)
+        actions_layout.addWidget(self.server_actions, 0, 0)
         root.addWidget(actions)
 
         footer = QWidget()
@@ -242,6 +273,7 @@ class MpidDialog(QDialog):
         self.profile_list.currentRowChanged.connect(self._update_action_state)
         self.server_tree.itemDoubleClicked.connect(lambda _item, _column: self._rename_selected_entry())
         self.server_tree.currentItemChanged.connect(lambda _current, _previous: self._update_action_state())
+        self.details_tabs.currentChanged.connect(lambda _index: self._update_action_state())
         self.button_box.accepted.connect(self.accept)
         self.button_box.rejected.connect(self.reject)
 
@@ -374,6 +406,7 @@ class MpidDialog(QDialog):
         profile = self._selected_profile()
         has_selection = profile is not None
         has_tree_selection = self._selected_tree_entry() is not None
+        is_server_tab = self.details_tabs.currentIndex() == 0
         self.apply_button.setEnabled(has_selection)
         self.rename_button.setEnabled(has_selection)
         self.delete_button.setEnabled(has_selection)
@@ -381,6 +414,8 @@ class MpidDialog(QDialog):
         self.add_character_button.setEnabled(has_selection and bool(profile.servers if profile else False))
         self.rename_entry_button.setEnabled(has_tree_selection)
         self.delete_entry_button.setEnabled(has_tree_selection)
+        self.profile_actions.setVisible(not is_server_tab)
+        self.server_actions.setVisible(is_server_tab)
         self._populate_server_tree()
         self._populate_value_table()
 
