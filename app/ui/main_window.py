@@ -255,7 +255,7 @@ class MainWindow(QMainWindow):
         self.cheat_sync_progress.setMaximum(0)
         self.cheat_sync_progress.setTextVisible(False)
         self.cheat_sync_progress.setFixedHeight(4)
-        self.cheat_sync_progress.hide()
+        self._set_cheat_sync_progress_active(False)
 
         content_row = QWidget()
         content_layout = QHBoxLayout(content_row)
@@ -415,6 +415,25 @@ class MainWindow(QMainWindow):
             "QLabel { border: none; background: transparent; }"
         )
         return section
+
+    def _set_cheat_sync_progress_active(self, active: bool) -> None:
+        c = THEMES[self.config.theme]
+        chunk_color = "#39d353" if active else c.border
+        groove_color = c.border if active else c.alternate_base
+        self.cheat_sync_progress.setStyleSheet(
+            f"""
+            QProgressBar {{
+                background-color: {groove_color};
+                border: 1px solid {c.border};
+                border-radius: 3px;
+            }}
+            QProgressBar::chunk {{
+                background-color: {chunk_color};
+                border-radius: 3px;
+            }}
+            """
+        )
+        self.cheat_sync_progress.setEnabled(active)
 
     def tr(self, key: str, **kwargs: object) -> str:
         return self.translator.text(key, **kwargs)
@@ -1040,7 +1059,7 @@ class MainWindow(QMainWindow):
         self.cheat_installation_label.setText(
             self.tr("cheat_selected_installation", name=installation.name)
         )
-        self.cheat_sync_progress.show()
+        self._set_cheat_sync_progress_active(True)
         self._cheat_sync_worker_running = True
         cheat_service = self._get_cheat_service()
         worker = threading.Thread(
@@ -1079,7 +1098,7 @@ class MainWindow(QMainWindow):
 
     def _apply_cheat_sync_result(self, payload: object) -> None:
         self._cheat_sync_worker_running = False
-        self.cheat_sync_progress.hide()
+        self._set_cheat_sync_progress_active(False)
         if not isinstance(payload, dict):
             self._is_loading_cheat_controls = False
             return
