@@ -27,6 +27,18 @@ pyinstaller \
 
 echo "[5/5] Writing convenience launcher files"
 APP_DIR="${DIST_DIR}/FL-Atlas-Launcher"
+if [[ -f "${APP_DIR}" ]]; then
+  BINARY_PATH="${APP_DIR}"
+  TEMP_DIR="${DIST_DIR}/FL-Atlas-Launcher.bundle"
+  rm -rf "${TEMP_DIR}"
+  mkdir -p "${TEMP_DIR}"
+  mv "${BINARY_PATH}" "${TEMP_DIR}/FL-Atlas-Launcher"
+  APP_DIR="${TEMP_DIR}"
+elif [[ ! -d "${APP_DIR}" ]]; then
+  echo "Expected build output at ${APP_DIR}, but it was not created." >&2
+  exit 1
+fi
+
 cat > "${APP_DIR}/launch.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -48,6 +60,12 @@ StartupWMClass=FL-Atlas-Launcher
 EOF
 
 cp "${ROOT_DIR}/app/resources/icons/fl_atlas_launcher_icon_512.png" "${APP_DIR}/fl_atlas_launcher_icon_512.png"
+
+if [[ "${APP_DIR}" != "${DIST_DIR}/FL-Atlas-Launcher" ]]; then
+  rm -rf "${DIST_DIR}/FL-Atlas-Launcher"
+  mv "${APP_DIR}" "${DIST_DIR}/FL-Atlas-Launcher"
+  APP_DIR="${DIST_DIR}/FL-Atlas-Launcher"
+fi
 
 echo
 echo "Linux build completed:"

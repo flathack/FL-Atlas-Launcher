@@ -75,6 +75,7 @@ class MainWindow(QMainWindow):
     SYNC_POLL_INTERVAL_MS = 15000
     PROCESS_POLL_INTERVAL_MS = 2500
     HELP_WIKI_URL = "https://github.com/flathack/FL-Atlas-Launcher/wiki"
+    WEB_TOOLS_URL = "https://flathack.github.io/"
 
     def __init__(self, config_service: ConfigService, app_version: str, *, show_cheat_features: bool = True) -> None:
         super().__init__()
@@ -178,6 +179,8 @@ class MainWindow(QMainWindow):
             self._apply_cheater_switch_style(False)
 
         help_menu = QMenu(self.help_button)
+        help_web_tools_action = help_menu.addAction(self.tr("help_open_web_tools"))
+        help_web_tools_action.triggered.connect(self._open_web_tools)
         help_discord_action = help_menu.addAction(self.tr("help_open_discord"))
         help_discord_action.triggered.connect(self._open_help_discord)
         help_wiki_action = help_menu.addAction(self.tr("help_open_wiki"))
@@ -1611,6 +1614,9 @@ class MainWindow(QMainWindow):
 
     def _open_help_wiki(self) -> None:
         QDesktopServices.openUrl(QUrl(self.HELP_WIKI_URL))
+
+    def _open_web_tools(self) -> None:
+        QDesktopServices.openUrl(QUrl(self.WEB_TOOLS_URL))
 
     def _open_help_discord(self) -> None:
         discord_url = self.remote_link_service.discord_invite_url()

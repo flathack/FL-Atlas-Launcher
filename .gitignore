@@ -12,3 +12,5 @@ build-x64/
 *.spec
 !FL-Atlas-Launcher.spec
 release-assets/
+build-linux/
+dist-linux/
