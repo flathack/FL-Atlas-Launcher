@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import json
 from pathlib import Path
+import subprocess
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -12,6 +14,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -29,6 +32,11 @@ from app.models.installation import Installation
 from app.services.ini_service import IniService
 from app.services.path_mapping_service import PathMappingService
 from app.themes import THEMES, THEME_DISPLAY_NAMES
+
+try:
+    import yaml
+except ImportError:  # pragma: no cover - optional dependency in some environments
+    yaml = None
 
 
 class SettingsDialog(QDialog):
@@ -64,11 +72,15 @@ class SettingsDialog(QDialog):
         self.prefix_path_edit = QLineEdit()
         self.runner_target_edit = QLineEdit()
         self.launch_arguments_edit = QLineEdit()
+        self.method_help_label = QLabel()
+        self.method_help_label.setWordWrap(True)
         self.perf_path_edit.setPlaceholderText(str(self.ini_service.default_perf_options_path()))
 
         self.new_button = QPushButton(self.tr("new"))
         self.delete_button = QPushButton(self.tr("delete"))
         self.browse_exe_button = QPushButton(self.tr("choose_exe"))
+        self.detect_bottles_button = QPushButton(self.tr("detect_bottles"))
+        self.detect_lutris_button = QPushButton(self.tr("detect_lutris"))
         self.browse_perf_button = QPushButton(self.tr("choose_perf"))
         self.browse_prefix_button = QPushButton(self.tr("choose_prefix"))
 
@@ -105,7 +117,11 @@ class SettingsDialog(QDialog):
         return str(self.theme_combo.currentData() or self._current_theme)
 
     def tr(self, key: str, **kwargs: object) -> str:
-        return self.translator.text(key, **kwargs)
+        fallback = kwargs.pop("fallback", None)
+        text = self.translator.text(key, **kwargs)
+        if text == key and fallback is not None:
+            return str(fallback)
+        return text
 
     def _build_ui(self) -> None:
         tabs = QTabWidget()
@@ -127,19 +143,36 @@ class SettingsDialog(QDialog):
         editor_layout.addWidget(QLabel(self.tr("details")))
 
         form_layout = QFormLayout()
-        form_layout.addRow(self.tr("name"), self.name_edit)
+        self.name_label = QLabel(self.tr("name"))
+        self.launch_method_label = QLabel(self.tr("launch_method"))
+        self.exe_label = QLabel("Freelancer.exe")
+        self.prefix_label = QLabel(self.tr("prefix_path"))
+        self.runner_target_label = QLabel(self.tr("runner_target"))
+        self.launch_arguments_label = QLabel(self.tr("launch_arguments"))
+        self.perf_label = QLabel("PerfOptions.ini")
+
+        form_layout.addRow(self.name_label, self.name_edit)
         for method in self.LAUNCH_METHODS:
             self.launch_method_combo.addItem(self.tr(f"launch_method_{method}"), method)
-        form_layout.addRow(self.tr("launch_method"), self.launch_method_combo)
-        form_layout.addRow("Freelancer.exe", self._with_button(self.exe_path_edit, self.browse_exe_button))
-        form_layout.addRow(self.tr("prefix_path"), self._with_button(self.prefix_path_edit, self.browse_prefix_button))
-        form_layout.addRow(self.tr("runner_target"), self.runner_target_edit)
-        form_layout.addRow(self.tr("launch_arguments"), self.launch_arguments_edit)
+        form_layout.addRow(self.launch_method_label, self.launch_method_combo)
         form_layout.addRow(
-            "PerfOptions.ini",
+            self.exe_label,
+            self._with_buttons(
+                self.exe_path_edit,
+                self.browse_exe_button,
+                self.detect_bottles_button,
+                self.detect_lutris_button,
+            ),
+        )
+        form_layout.addRow(self.prefix_label, self._with_button(self.prefix_path_edit, self.browse_prefix_button))
+        form_layout.addRow(self.runner_target_label, self.runner_target_edit)
+        form_layout.addRow(self.launch_arguments_label, self.launch_arguments_edit)
+        form_layout.addRow(
+            self.perf_label,
             self._with_button(self.perf_path_edit, self.browse_perf_button),
         )
         editor_layout.addLayout(form_layout)
+        editor_layout.addWidget(self.method_help_label)
         editor_layout.addStretch(1)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -167,17 +200,21 @@ class SettingsDialog(QDialog):
         root_layout.addWidget(self.button_box)
 
     def _with_button(self, line_edit: QLineEdit, button: QPushButton) -> QWidget:
+        return self._with_buttons(line_edit, button)
+
+    def _with_buttons(self, line_edit: QLineEdit, *buttons: QPushButton) -> QWidget:
         wrapper = QWidget()
         layout = QHBoxLayout(wrapper)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(line_edit, 1)
-        layout.addWidget(button)
+        for button in buttons:
+            layout.addWidget(button)
         return wrapper
 
     def _connect_signals(self) -> None:
         self.installation_list.currentRowChanged.connect(self._load_current_installation_into_form)
         self.name_edit.textEdited.connect(self._save_form_to_current_item)
-        self.launch_method_combo.currentIndexChanged.connect(self._save_form_to_current_item)
+        self.launch_method_combo.currentIndexChanged.connect(self._on_launch_method_changed)
         self.exe_path_edit.textEdited.connect(self._save_form_to_current_item)
         self.prefix_path_edit.textEdited.connect(self._save_form_to_current_item)
         self.runner_target_edit.textEdited.connect(self._save_form_to_current_item)
@@ -186,6 +223,8 @@ class SettingsDialog(QDialog):
         self.new_button.clicked.connect(self._add_installation)
         self.delete_button.clicked.connect(self._delete_current_installation)
         self.browse_exe_button.clicked.connect(self._browse_executable)
+        self.detect_bottles_button.clicked.connect(self._detect_bottles_installation)
+        self.detect_lutris_button.clicked.connect(self._detect_lutris_installation)
         self.browse_prefix_button.clicked.connect(self._browse_prefix_path)
         self.browse_perf_button.clicked.connect(self._browse_perf_options)
         self.button_box.accepted.connect(self._on_accept)
@@ -255,6 +294,7 @@ class SettingsDialog(QDialog):
             self.launch_arguments_edit.setText(installation.launch_arguments)
             self.perf_path_edit.setText(installation.perf_options_path)
             self.perf_path_edit.setPlaceholderText(str(self.ini_service.default_perf_options_path(installation)))
+            self._sync_method_specific_ui()
         finally:
             self._is_loading = False
 
@@ -277,6 +317,91 @@ class SettingsDialog(QDialog):
         self.installation_list.item(row).setText(installation.name)
         self.perf_path_edit.setPlaceholderText(str(self.ini_service.default_perf_options_path(installation)))
 
+    def _on_launch_method_changed(self) -> None:
+        self._sync_method_specific_ui()
+        self._auto_fill_method_specific_fields()
+        self._save_form_to_current_item()
+
+    def _sync_method_specific_ui(self) -> None:
+        method = str(self.launch_method_combo.currentData() or "auto")
+
+        self.prefix_label.setText(self.tr(f"prefix_path_{method}", fallback=self.tr("prefix_path")))
+        self.runner_target_label.setText(self.tr(f"runner_target_{method}", fallback=self.tr("runner_target")))
+        self.method_help_label.setText(self.tr(f"launch_method_help_{method}", fallback=""))
+        self.prefix_path_edit.setPlaceholderText(
+            self.tr(f"prefix_path_placeholder_{method}", fallback=self.tr("prefix_path_placeholder_default", fallback=""))
+        )
+        self.runner_target_edit.setPlaceholderText(
+            self.tr(
+                f"runner_target_placeholder_{method}",
+                fallback=self.tr("runner_target_placeholder_default", fallback=""),
+            )
+        )
+        self.launch_arguments_edit.setPlaceholderText(self.tr("launch_arguments_placeholder"))
+        uses_prefix = method in {"wine", "bottles"}
+        uses_runner_target = method in {"bottles", "steam", "lutris"}
+        self.detect_bottles_button.setEnabled(method == "bottles")
+        self.detect_lutris_button.setEnabled(method == "lutris")
+        self.prefix_path_edit.setEnabled(uses_prefix)
+        self.browse_prefix_button.setEnabled(uses_prefix)
+        self.runner_target_edit.setEnabled(uses_runner_target)
+
+    def _auto_fill_method_specific_fields(self) -> None:
+        method = str(self.launch_method_combo.currentData() or "auto")
+        if method == "bottles":
+            self._auto_fill_bottles_fields()
+
+    def _auto_fill_bottles_fields(self) -> None:
+        exe_text = self.exe_path_edit.text().strip()
+        prefix_text = self.prefix_path_edit.text().strip()
+
+        bottle_root = self._detect_bottle_root(exe_text) or self._detect_bottle_root(prefix_text)
+        if bottle_root is None:
+            return
+
+        if not prefix_text:
+            self.prefix_path_edit.setText(str(bottle_root))
+
+        if not self.runner_target_edit.text().strip():
+            bottle_name = self._read_bottle_name(bottle_root)
+            if bottle_name:
+                self.runner_target_edit.setText(bottle_name)
+
+    def _detect_bottle_root(self, selected_path: str) -> Path | None:
+        if not selected_path.strip():
+            return None
+
+        candidate = Path(selected_path).expanduser()
+        parts = candidate.parts
+        try:
+            bottle_index = parts.index("bottles")
+        except ValueError:
+            bottle_index = -1
+
+        if bottle_index >= 0 and bottle_index + 1 < len(parts):
+            bottle_root = Path(*parts[: bottle_index + 2])
+            if (bottle_root / "bottle.yml").exists():
+                return bottle_root
+
+        search_root = candidate if candidate.is_dir() else candidate.parent
+        for current in [search_root, *search_root.parents]:
+            if (current / "bottle.yml").exists():
+                return current
+        return None
+
+    def _read_bottle_name(self, bottle_root: Path) -> str:
+        bottle_file = bottle_root / "bottle.yml"
+        if not bottle_file.exists():
+            return ""
+        try:
+            for raw_line in bottle_file.read_text(encoding="utf-8").splitlines():
+                line = raw_line.strip()
+                if line.startswith("Name:"):
+                    return line.split(":", 1)[1].strip().strip("'\"")
+        except OSError:
+            return ""
+        return ""
+
     def _browse_executable(self) -> None:
         filename, _ = QFileDialog.getOpenFileName(
             self,
@@ -287,6 +412,7 @@ class SettingsDialog(QDialog):
         if not filename:
             return
         self.exe_path_edit.setText(filename)
+        self._auto_fill_method_specific_fields()
         self._save_form_to_current_item()
 
     def _browse_perf_options(self) -> None:
@@ -310,7 +436,222 @@ class SettingsDialog(QDialog):
         if not directory:
             return
         self.prefix_path_edit.setText(directory)
+        self._auto_fill_method_specific_fields()
         self._save_form_to_current_item()
+
+    def _detect_bottles_installation(self) -> None:
+        candidates = self._find_bottles_freelancer_candidates()
+        if not candidates:
+            QMessageBox.information(
+                self,
+                self.tr("detect_bottles_none_title"),
+                self.tr("detect_bottles_none_message"),
+            )
+            return
+
+        selected = candidates[0]
+        if len(candidates) > 1:
+            labels = [item["label"] for item in candidates]
+            chosen_label, accepted = QInputDialog.getItem(
+                self,
+                self.tr("detect_bottles_select_title"),
+                self.tr("detect_bottles_select_message"),
+                labels,
+                0,
+                False,
+            )
+            if not accepted:
+                return
+            selected = next(item for item in candidates if item["label"] == chosen_label)
+
+        self.launch_method_combo.setCurrentIndex(max(0, self.launch_method_combo.findData("bottles")))
+        self.exe_path_edit.setText(selected["exe_path"])
+        self.prefix_path_edit.setText(selected["prefix_path"])
+        self.runner_target_edit.setText(selected["runner_target"])
+
+        current_name = self.name_edit.text().strip()
+        if not current_name or current_name == self.tr("new_installation"):
+            self.name_edit.setText(selected["suggested_name"])
+
+        if not self.perf_path_edit.text().strip():
+            self.perf_path_edit.setPlaceholderText(
+                str(self.path_mapping_service.default_perf_options_path(self._current_prefix_text()))
+            )
+
+        self._sync_method_specific_ui()
+        self._save_form_to_current_item()
+
+    def _detect_lutris_installation(self) -> None:
+        candidates = self._find_lutris_freelancer_candidates()
+        if not candidates:
+            QMessageBox.information(
+                self,
+                self.tr("detect_lutris_none_title"),
+                self.tr("detect_lutris_none_message"),
+            )
+            return
+
+        selected = candidates[0]
+        if len(candidates) > 1:
+            labels = [item["label"] for item in candidates]
+            chosen_label, accepted = QInputDialog.getItem(
+                self,
+                self.tr("detect_lutris_select_title"),
+                self.tr("detect_lutris_select_message"),
+                labels,
+                0,
+                False,
+            )
+            if not accepted:
+                return
+            selected = next(item for item in candidates if item["label"] == chosen_label)
+
+        self.launch_method_combo.setCurrentIndex(max(0, self.launch_method_combo.findData("lutris")))
+        self.runner_target_edit.setText(selected["runner_target"])
+
+        if selected["exe_path"]:
+            self.exe_path_edit.setText(selected["exe_path"])
+        if selected["prefix_path"]:
+            self.prefix_path_edit.setText(selected["prefix_path"])
+
+        current_name = self.name_edit.text().strip()
+        if not current_name or current_name == self.tr("new_installation"):
+            self.name_edit.setText(selected["suggested_name"])
+
+        if selected["prefix_path"] and not self.perf_path_edit.text().strip():
+            self.perf_path_edit.setPlaceholderText(
+                str(self.path_mapping_service.default_perf_options_path(selected["prefix_path"]))
+            )
+
+        if selected.get("needs_manual_exe") == "1":
+            QMessageBox.information(
+                self,
+                self.tr("detect_lutris_partial_title"),
+                self.tr("detect_lutris_partial_message", name=selected["suggested_name"]),
+            )
+
+        self._sync_method_specific_ui()
+        self._save_form_to_current_item()
+
+    def _find_bottles_freelancer_candidates(self) -> list[dict[str, str]]:
+        bottles_root = Path.home() / ".var" / "app" / "com.usebottles.bottles" / "data" / "bottles" / "bottles"
+        if not bottles_root.exists():
+            return []
+
+        candidates: list[dict[str, str]] = []
+        for bottle_root in sorted(path for path in bottles_root.iterdir() if path.is_dir()):
+            bottle_name = self._read_bottle_name(bottle_root) or bottle_root.name
+            for exe_path in sorted(bottle_root.glob("drive_c/**/Freelancer.exe")):
+                suggested_name = exe_path.parents[1].name if len(exe_path.parents) >= 2 else bottle_name
+                relative_exe = exe_path.relative_to(bottle_root)
+                candidates.append(
+                    {
+                        "label": f"{bottle_name} | {relative_exe}",
+                        "exe_path": str(exe_path),
+                        "prefix_path": str(bottle_root),
+                        "runner_target": bottle_name,
+                        "suggested_name": suggested_name,
+                    }
+                )
+        return candidates
+
+    def _find_lutris_freelancer_candidates(self) -> list[dict[str, str]]:
+        raw_games = self._load_lutris_games_json()
+        candidates: list[dict[str, str]] = []
+        for game in raw_games:
+            slug = str(game.get("slug") or "").strip()
+            name = str(game.get("name") or "").strip()
+            runner = str(game.get("runner") or "").strip().lower()
+            if runner != "wine":
+                continue
+            haystack = f"{slug} {name}".lower()
+            if "freelancer" not in haystack and "crossfire" not in haystack:
+                continue
+
+            details = self._load_lutris_yaml_details(slug)
+            exe_path = details.get("exe_path", "")
+            prefix_path = details.get("prefix_path", "")
+            if not exe_path and prefix_path:
+                exe_path = self._discover_freelancer_exe(Path(prefix_path))
+
+            label_bits = [name or slug, slug]
+            if exe_path:
+                label_bits.append(Path(exe_path).name)
+            elif prefix_path:
+                label_bits.append(prefix_path)
+
+            candidates.append(
+                {
+                    "label": " | ".join(bit for bit in label_bits if bit),
+                    "runner_target": slug or str(game.get("id") or "").strip(),
+                    "suggested_name": name or slug or self.tr("new_installation"),
+                    "exe_path": exe_path,
+                    "prefix_path": prefix_path,
+                    "needs_manual_exe": "1" if not exe_path else "0",
+                }
+            )
+        return candidates
+
+    def _load_lutris_games_json(self) -> list[dict]:
+        try:
+            completed = subprocess.run(
+                ["lutris", "--list-games", "--json"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except OSError:
+            return []
+
+        if completed.returncode != 0 or not completed.stdout.strip():
+            return []
+        try:
+            payload = json.loads(completed.stdout)
+        except json.JSONDecodeError:
+            return []
+        return payload if isinstance(payload, list) else []
+
+    def _load_lutris_yaml_details(self, slug: str) -> dict[str, str]:
+        if yaml is None:
+            return {"exe_path": "", "prefix_path": ""}
+
+        games_dir = Path.home() / ".local" / "share" / "lutris" / "games"
+        if not games_dir.exists():
+            return {"exe_path": "", "prefix_path": ""}
+
+        for config_path in sorted(games_dir.glob("*.yml")):
+            try:
+                data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            except (OSError, yaml.YAMLError):
+                continue
+
+            yaml_slug = str(data.get("game_slug") or data.get("slug") or "").strip()
+            if yaml_slug != slug:
+                continue
+
+            game_section = data.get("game") or {}
+            exe_path = str(game_section.get("exe") or "").strip()
+            prefix_path = str(game_section.get("prefix") or "").strip()
+            return {"exe_path": exe_path, "prefix_path": prefix_path}
+
+        return {"exe_path": "", "prefix_path": ""}
+
+    def _discover_freelancer_exe(self, root: Path) -> str:
+        if not root.exists():
+            return ""
+        preferred = [
+            root / "drive_c" / "Freelancer Crossfire" / "EXE" / "Freelancer.exe",
+            root / "drive_c" / "Games" / "Freelancer HD Edition" / "EXE" / "Freelancer.exe",
+            root / "drive_c" / "Program Files (x86)" / "Microsoft Games" / "Freelancer" / "EXE" / "Freelancer.exe",
+        ]
+        for candidate in preferred:
+            if candidate.exists():
+                return str(candidate)
+        matches = sorted(root.glob("drive_c/**/Freelancer.exe"))
+        return str(matches[0]) if matches else ""
+
+    def _current_prefix_text(self) -> str:
+        return self.prefix_path_edit.text().strip()
 
     def _on_accept(self) -> None:
         self._save_form_to_current_item()

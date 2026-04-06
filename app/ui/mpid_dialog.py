@@ -57,6 +57,8 @@ class MpidDialog(QDialog):
         self.sync_path_edit = QLineEdit(sync_path)
         self.sync_path_edit.setPlaceholderText(r"\\NAS\Freelancer\MPIDs")
         self.sync_browse_button = QPushButton(self.tr("choose_folder"))
+        self.registry_location_label = QLabel()
+        self.registry_location_label.setWordWrap(True)
         self.profile_list = QListWidget()
         self.profile_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.value_details_label = QLabel(self.tr("mpid_profile_fields"))
@@ -151,6 +153,7 @@ class MpidDialog(QDialog):
 
         sync_form = QFormLayout()
         sync_form.addRow(self.tr("sync_folder"), sync_row)
+        sync_form.addRow(self.tr("registry_source"), self.registry_location_label)
         root.addLayout(sync_form)
 
         content = QWidget()
@@ -240,6 +243,12 @@ class MpidDialog(QDialog):
         self.regenerate_button.setEnabled(self.mpid_service.has_mpid_values(self.installation))
         self.export_button.setEnabled(bool(self._profiles))
         self.sync_button.setEnabled(bool(self.sync_path))
+        self.registry_location_label.setText(
+            self.tr(
+                "registry_source_value",
+                source=self.mpid_service.registry_location_description(self.installation),
+            )
+        )
 
     def _selected_profile(self) -> MpidProfile | None:
         row = self.profile_list.currentRow()

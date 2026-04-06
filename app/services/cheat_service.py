@@ -16,6 +16,7 @@ except Exception:
     pefile = None
 
 from app.models.installation import Installation
+from app.services.path_mapping_service import PathMappingService
 
 
 CRUISE_CHARGE_KEY = "CRUISE_STEADY_TIME"
@@ -87,9 +88,11 @@ class CheatService:
     def __init__(self, storage_root: Path) -> None:
         self.storage_root = storage_root
         self._dll_string_cache: dict[Path, dict[int, str]] = {}
+        self.path_mapping_service = PathMappingService()
 
     def resolve_game_root(self, installation: Installation) -> Path:
-        exe_path = Path(installation.exe_path).expanduser()
+        resolved_exe = self.path_mapping_service.resolve_path(installation.exe_path, installation.prefix_path)
+        exe_path = resolved_exe if resolved_exe is not None else Path()
         if not exe_path.exists():
             raise FileNotFoundError("The selected Freelancer executable does not exist.")
 
@@ -584,10 +587,25 @@ class CheatService:
             dll_name = raw_value.split(";", 1)[0].strip().strip('"\'')
             if not dll_name:
                 continue
-            candidate = freelancer_ini.parent / dll_name
+            candidate = self._resolve_relative_path(freelancer_ini.parent, dll_name)
             if candidate.exists():
                 dll_paths.append(candidate)
         return dll_paths
+
+    def _resolve_relative_path(self, base: Path, raw_path: str) -> Path:
+        parts = [part for part in str(raw_path or "").replace("\\", "/").split("/") if part and part != "."]
+        current = base
+        for part in parts:
+            if part == "..":
+                current = current.parent
+                continue
+            if current.exists() and current.is_dir():
+                found = next((entry for entry in current.iterdir() if entry.name.lower() == part.lower()), None)
+                if found is not None:
+                    current = found
+                    continue
+            current = current / part
+        return current
 
     def _resolve_ids_name(self, ids_value: int, resource_dlls: list[Path]) -> str:
         slot = (int(ids_value) >> 16) & 0xFFFF
@@ -619,6 +637,9 @@ class CheatService:
         if text:
             return text
 
+        if os.name != "nt" or not hasattr(ctypes, "windll"):
+            return ""
+
         load_as_resource = 0x00000020 | 0x00000002
         module = ctypes.windll.kernel32.LoadLibraryExW(str(dll_path), None, load_as_resource)
         if not module:
@@ -634,7 +655,7 @@ class CheatService:
 
     def _load_string_table_from_dll(self, dll_path: Path) -> dict[int, str]:
         if pefile is None:
-            return {}
+            return self._load_string_table_from_pe_fallback(dll_path)
 
         pe = None
         strings: dict[int, str] = {}
@@ -671,6 +692,98 @@ class CheatService:
             except Exception:
                 pass
         return strings
+
+    def _load_string_table_from_pe_fallback(self, dll_path: Path) -> dict[int, str]:
+        try:
+            raw = dll_path.read_bytes()
+        except OSError:
+            return {}
+
+        try:
+            resource_rva, resource_size, section_table_offset, section_count = self._parse_pe_headers(raw)
+        except ValueError:
+            return {}
+        if resource_rva <= 0 or resource_size <= 0:
+            return {}
+
+        resource_offset = self._rva_to_offset(raw, resource_rva, section_table_offset, section_count)
+        if resource_offset is None:
+            return {}
+
+        strings: dict[int, str] = {}
+        try:
+            root_entries = self._read_resource_entries(raw, resource_offset)
+            for type_id, type_is_dir, type_offset in root_entries:
+                if type_id != 6 or not type_is_dir:
+                    continue
+                type_dir = resource_offset + type_offset
+                for block_id, block_is_dir, block_offset in self._read_resource_entries(raw, type_dir):
+                    if block_id is None or not block_is_dir:
+                        continue
+                    lang_dir = resource_offset + block_offset
+                    for _lang_id, lang_is_dir, lang_offset in self._read_resource_entries(raw, lang_dir):
+                        if lang_is_dir:
+                            continue
+                        data_entry_offset = resource_offset + lang_offset
+                        data_rva, size = struct.unpack_from("<II", raw, data_entry_offset)
+                        data_offset = self._rva_to_offset(raw, data_rva, section_table_offset, section_count)
+                        if data_offset is None:
+                            continue
+                        blob = raw[data_offset:data_offset + size]
+                        self._decode_string_block(blob, int(block_id), strings)
+        except Exception:
+            return {}
+        return strings
+
+    def _parse_pe_headers(self, raw: bytes) -> tuple[int, int, int, int]:
+        if len(raw) < 0x40 or raw[:2] != b"MZ":
+            raise ValueError("Invalid DOS header")
+        pe_offset = struct.unpack_from("<I", raw, 0x3C)[0]
+        if pe_offset + 24 > len(raw) or raw[pe_offset:pe_offset + 4] != b"PE\0\0":
+            raise ValueError("Invalid PE header")
+
+        coff_offset = pe_offset + 4
+        section_count = struct.unpack_from("<H", raw, coff_offset + 2)[0]
+        optional_header_size = struct.unpack_from("<H", raw, coff_offset + 16)[0]
+        optional_header_offset = coff_offset + 20
+        magic = struct.unpack_from("<H", raw, optional_header_offset)[0]
+        data_dir_count_offset = optional_header_offset + (92 if magic == 0x10B else 108)
+        data_dir_offset = optional_header_offset + (96 if magic == 0x10B else 112)
+        data_dir_count = struct.unpack_from("<I", raw, data_dir_count_offset)[0]
+        if data_dir_count < 3:
+            raise ValueError("Missing resource data directory")
+        resource_rva, resource_size = struct.unpack_from("<II", raw, data_dir_offset + (2 * 8))
+        section_table_offset = optional_header_offset + optional_header_size
+        return resource_rva, resource_size, section_table_offset, section_count
+
+    def _rva_to_offset(self, raw: bytes, rva: int, section_table_offset: int, section_count: int) -> int | None:
+        for index in range(section_count):
+            offset = section_table_offset + (index * 40)
+            if offset + 40 > len(raw):
+                break
+            virtual_size, virtual_address, raw_size, raw_pointer = struct.unpack_from("<IIII", raw, offset + 8)
+            size = max(virtual_size, raw_size)
+            if virtual_address <= rva < virtual_address + size:
+                return raw_pointer + (rva - virtual_address)
+        return None
+
+    def _read_resource_entries(self, raw: bytes, directory_offset: int) -> list[tuple[int | None, bool, int]]:
+        if directory_offset + 16 > len(raw):
+            return []
+        named_count, id_count = struct.unpack_from("<HH", raw, directory_offset + 12)
+        total = named_count + id_count
+        entries: list[tuple[int | None, bool, int]] = []
+        entry_offset = directory_offset + 16
+        for _ in range(total):
+            if entry_offset + 8 > len(raw):
+                break
+            name_or_id, child = struct.unpack_from("<II", raw, entry_offset)
+            entry_offset += 8
+            entry_id = None if (name_or_id & 0x80000000) else int(name_or_id)
+            is_directory = bool(child & 0x80000000)
+            child_offset = child & 0x7FFFFFFF
+            entries.append((entry_id, is_directory, child_offset))
+        return entries
 
     def _decode_string_block(self, blob: bytes, block_id: int, out: dict[int, str]) -> None:
         offset = 0

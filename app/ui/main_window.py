@@ -40,6 +40,7 @@ from app.models.installation import Installation
 from app.resource_utils import resource_path
 from app.services.cheat_service import CheatService
 from app.services.config_service import ConfigService
+from app.services.exe_icon_service import ExeIconService
 from app.services.ini_service import IniService
 from app.services.launcher_service import LauncherService
 from app.services.mpid_service import MpidService
@@ -81,6 +82,7 @@ class MainWindow(QMainWindow):
         self.config = AppConfig.from_dict(config_service.config.to_dict())
         self.translator = Translator(self.config.language)
         self.icon_provider = QFileIconProvider()
+        self.exe_icon_service = ExeIconService()
         self.resolution_service = ResolutionService()
         self.ini_service = IniService()
         self.mpid_service = MpidService()
@@ -503,7 +505,7 @@ class MainWindow(QMainWindow):
         exe_path = self.launcher_service.resolve_executable_path(installation)
         base_icon: QIcon
         if exe_path.exists():
-            base_icon = self.icon_provider.icon(QFileInfo(str(exe_path)))
+            base_icon = self.exe_icon_service.icon_for_executable(exe_path) or self.icon_provider.icon(QFileInfo(str(exe_path)))
         else:
             base_icon = self.style().standardIcon(self.style().StandardPixmap.SP_ComputerIcon)
 

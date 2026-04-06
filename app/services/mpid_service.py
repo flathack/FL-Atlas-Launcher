@@ -69,6 +69,15 @@ class MpidService:
                 return profile.id
         return None
 
+    def registry_location_description(self, installation: Installation | None = None) -> str:
+        if self._use_native_windows_registry():
+            return f"HKCU\\{self.REGISTRY_PATH}"
+
+        registry_path = self._wine_registry_file(installation)
+        if registry_path is None:
+            return f"user.reg | HKCU\\{self.REGISTRY_PATH}"
+        return f"{registry_path} | HKCU\\{self.REGISTRY_PATH}"
+
     def _use_native_windows_registry(self) -> bool:
         return os.name == "nt" and winreg is not None
 
@@ -214,7 +223,8 @@ class MpidService:
         section_line = self._wine_section_header()
         start_index = -1
         for index, line in enumerate(lines):
-            if line.strip() == section_line:
+            stripped = line.strip()
+            if stripped == section_line or stripped.startswith(f"{section_line} "):
                 start_index = index
                 break
         if start_index < 0:
