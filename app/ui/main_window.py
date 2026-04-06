@@ -7,7 +7,7 @@ from pathlib import Path
 import threading
 
 from PySide6.QtCore import QEvent, QFileInfo, QObject, QSize, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QAction, QBrush, QColor, QDesktopServices, QFont, QIcon, QPainter, QPen, QRadialGradient
+from PySide6.QtGui import QAction, QBrush, QColor, QDesktopServices, QFont, QFontMetrics, QIcon, QPainter, QPen, QRadialGradient
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -587,6 +587,9 @@ class MainWindow(QMainWindow):
         if base_icon.isNull():
             base_icon = self.style().standardIcon(self.style().StandardPixmap.SP_ComputerIcon)
 
+        connection_label = self._connection_badge_text(installation)
+        if connection_label:
+            base_icon = self._with_connection_badge(base_icon, connection_label)
         if installation.cheater_mode_enabled:
             base_icon = self._with_cheat_glow(base_icon)
         if self._is_installation_running(installation):
@@ -1253,6 +1256,59 @@ class MainWindow(QMainWindow):
         painter.setBrush(QColor("#39d353"))
         painter.setPen(QPen(QColor("#f8fafc"), 2))
         painter.drawEllipse(32, 32, 14, 14)
+        painter.end()
+        return QIcon(pixmap)
+
+    def _connection_badge_text(self, installation: Installation) -> str:
+        method = installation.launch_method.strip().lower() or "auto"
+        target = installation.runner_target.strip()
+        if method == "bottles":
+            return f"Bottles - {target}" if target else "Bottles"
+        if method == "lutris":
+            return "Lutris"
+        if method == "steam":
+            return "Steam"
+        if method == "wine":
+            return "Wine"
+        if method == "windows":
+            return "Windows"
+        return ""
+
+    def _with_connection_badge(self, icon: QIcon, label: str) -> QIcon:
+        size = QSize(48, 48)
+        pixmap = icon.pixmap(size)
+        if pixmap.size() != size:
+            pixmap = pixmap.scaled(size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            padded = pixmap.__class__(size)
+            padded.fill(QColor(0, 0, 0, 0))
+            p = QPainter(padded)
+            x = (size.width() - pixmap.width()) // 2
+            y = (size.height() - pixmap.height()) // 2
+            p.drawPixmap(x, y, pixmap)
+            p.end()
+            pixmap = padded
+
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        font = QFont()
+        font.setPointSize(5)
+        font.setBold(True)
+        painter.setFont(font)
+
+        metrics = QFontMetrics(font)
+        elided = metrics.elidedText(label, Qt.TextElideMode.ElideRight, size.width() - 8)
+        text_width = min(size.width() - 6, metrics.horizontalAdvance(elided) + 6)
+        text_height = metrics.height() + 2
+        x = 3
+        y = size.height() - text_height - 3
+
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(15, 23, 42, 210))
+        painter.drawRoundedRect(x, y, text_width, text_height, 4, 4)
+
+        painter.setPen(QColor(241, 245, 249))
+        painter.drawText(x + 3, y, text_width - 6, text_height, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, elided)
         painter.end()
         return QIcon(pixmap)
 
