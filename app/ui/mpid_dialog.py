@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.i18n import Translator
+from app.models.installation import Installation
 from app.models.mpid_profile import MpidProfile
 from app.services.mpid_service import MpidService
 from app.services.mpid_transfer_service import EXPORT_FILE_NAME, MpidTransferService
@@ -38,6 +39,7 @@ class MpidDialog(QDialog):
         self,
         profiles: list[MpidProfile],
         mpid_service: MpidService,
+        installation: Installation | None,
         sync_path: str,
         translator: Translator,
         parent: QWidget | None = None,
@@ -49,6 +51,7 @@ class MpidDialog(QDialog):
 
         self._profiles = deepcopy(profiles)
         self.mpid_service = mpid_service
+        self.installation = installation
         self.transfer_service = MpidTransferService()
 
         self.sync_path_edit = QLineEdit(sync_path)
@@ -208,7 +211,7 @@ class MpidDialog(QDialog):
     def _populate_profiles(self) -> None:
         selected_profile = self._selected_profile()
         selected_profile_id = selected_profile.id if selected_profile is not None else None
-        active_profile_id = self.mpid_service.current_profile_id(self._profiles)
+        active_profile_id = self.mpid_service.current_profile_id(self._profiles, self.installation)
         self.profile_list.clear()
 
         for profile in self._profiles:
@@ -234,7 +237,7 @@ class MpidDialog(QDialog):
         self._update_action_state()
 
     def _refresh_info(self) -> None:
-        self.regenerate_button.setEnabled(self.mpid_service.has_mpid_values())
+        self.regenerate_button.setEnabled(self.mpid_service.has_mpid_values(self.installation))
         self.export_button.setEnabled(bool(self._profiles))
         self.sync_button.setEnabled(bool(self.sync_path))
 
@@ -279,8 +282,8 @@ class MpidDialog(QDialog):
         return type_names.get(value_type, self.tr("registry_type_unknown", value_type=value_type))
 
     def _capture_current_profile(self) -> None:
-        values = self.mpid_service.read_current_profile_values()
-        if not values or not self.mpid_service.has_mpid_values():
+        values = self.mpid_service.read_current_profile_values(self.installation)
+        if not values or not self.mpid_service.has_mpid_values(self.installation):
             QMessageBox.information(
                 self,
                 self.tr("no_mpid_found_title"),
@@ -288,7 +291,7 @@ class MpidDialog(QDialog):
             )
             return
 
-        existing_profile_id = self.mpid_service.current_profile_id(self._profiles)
+        existing_profile_id = self.mpid_service.current_profile_id(self._profiles, self.installation)
         if existing_profile_id is not None:
             existing_profile = next((profile for profile in self._profiles if profile.id == existing_profile_id), None)
             profile_name = existing_profile.name if existing_profile is not None else self.tr("unnamed_profile")
@@ -319,7 +322,7 @@ class MpidDialog(QDialog):
             return
 
         try:
-            self.mpid_service.apply_profile_values(profile.values)
+            self.mpid_service.apply_profile_values(profile.values, self.installation)
         except OSError as error:
             QMessageBox.critical(
                 self,
@@ -337,7 +340,7 @@ class MpidDialog(QDialog):
         )
 
     def _remove_current_mpid(self) -> None:
-        if not self.mpid_service.has_mpid_values():
+        if not self.mpid_service.has_mpid_values(self.installation):
             QMessageBox.information(
                 self,
                 self.tr("no_mpid_found_title"),
@@ -354,7 +357,7 @@ class MpidDialog(QDialog):
             return
 
         try:
-            deleted = self.mpid_service.delete_current_mpid_values()
+            deleted = self.mpid_service.delete_current_mpid_values(self.installation)
         except OSError as error:
             QMessageBox.critical(
                 self,

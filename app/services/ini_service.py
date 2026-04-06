@@ -5,19 +5,37 @@ from pathlib import Path
 
 from PySide6.QtCore import QStandardPaths
 
+from app.models.installation import Installation
+from app.services.path_mapping_service import PathMappingService
+
 
 DEFAULT_COLOR_BPP = "32"
 DEFAULT_DEPTH_BPP = "24"
 
 
 class IniService:
-    def default_perf_options_path(self) -> Path:
+    def __init__(self) -> None:
+        self.path_mapping_service = PathMappingService()
+
+    def default_perf_options_path(self, installation: Installation | None = None) -> Path:
+        prefix_path = installation.prefix_path if installation is not None else ""
+        if prefix_path.strip():
+            return self.path_mapping_service.default_perf_options_path(prefix_path)
+
         documents_dir = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DocumentsLocation)
         base_dir = Path(documents_dir) if documents_dir else Path.home() / "Documents"
         return base_dir / "My Games" / "Freelancer" / "PerfOptions.ini"
 
-    def resolve_perf_options_path(self, configured_path: str) -> Path:
-        candidate = Path(configured_path).expanduser() if configured_path else self.default_perf_options_path()
+    def resolve_perf_options_path(self, configured_path: str, installation: Installation | None = None) -> Path:
+        if configured_path:
+            candidate = self.path_mapping_service.resolve_path(
+                configured_path,
+                installation.prefix_path if installation is not None else "",
+            )
+            if candidate is None:
+                candidate = self.default_perf_options_path(installation)
+        else:
+            candidate = self.default_perf_options_path(installation)
         return candidate
 
     def read_resolution(self, ini_path: Path) -> str:

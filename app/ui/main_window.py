@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import datetime
 import json
 from pathlib import Path
-import subprocess
 import threading
 
 from PySide6.QtCore import QFileInfo, QObject, QSize, Qt, QTimer, QUrl, Signal
@@ -440,8 +439,9 @@ class MainWindow(QMainWindow):
         try:
             self.mpid_combo.clear()
 
-            current_profile_id = self.mpid_service.current_profile_id(self.config.mpid_profiles)
-            has_registry_mpid = self.mpid_service.has_mpid_values()
+            installation = self._current_installation()
+            current_profile_id = self.mpid_service.current_profile_id(self.config.mpid_profiles, installation)
+            has_registry_mpid = self.mpid_service.has_mpid_values(installation)
 
             if has_registry_mpid and current_profile_id is None:
                 self.mpid_combo.addItem(self.tr("registry_current_unsaved"), None)
@@ -500,7 +500,7 @@ class MainWindow(QMainWindow):
             self._show_last_played_status()
 
     def _icon_for_installation(self, installation: Installation) -> QIcon:
-        exe_path = Path(installation.exe_path)
+        exe_path = self.launcher_service.resolve_executable_path(installation)
         base_icon: QIcon
         if exe_path.exists():
             base_icon = self.icon_provider.icon(QFileInfo(str(exe_path)))
@@ -530,6 +530,7 @@ class MainWindow(QMainWindow):
         self._update_cheat_panel_visibility()
 
     def _on_installation_changed(self) -> None:
+        self._populate_mpid_profiles()
         self._update_launch_state()
         self._sync_cheat_panel_to_installation()
         self._show_last_played_status()
@@ -576,6 +577,7 @@ class MainWindow(QMainWindow):
         dialog = MpidDialog(
             self.config.mpid_profiles,
             self.mpid_service,
+            self._current_installation(),
             self.config.mpid_sync_path,
             self.translator,
             self,
@@ -624,7 +626,7 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            self.mpid_service.apply_profile_values(profile.values)
+            self.mpid_service.apply_profile_values(profile.values, self._current_installation())
         except OSError as error:
             QMessageBox.critical(
                 self,
@@ -648,7 +650,7 @@ class MainWindow(QMainWindow):
             )
             return
 
-        exe_path = Path(installation.exe_path)
+        exe_path = self.launcher_service.resolve_executable_path(installation)
         if not exe_path.exists():
             QMessageBox.warning(
                 self,
@@ -996,12 +998,12 @@ class MainWindow(QMainWindow):
         if self._process_worker_running:
             return
 
-        exe_paths = [
-            installation.exe_path
+        installations = [
+            installation
             for installation in self.config.installations
-            if installation.exe_path.strip() and Path(installation.exe_path).exists()
+            if installation.exe_path.strip() and self.launcher_service.resolve_executable_path(installation).exists()
         ]
-        if not exe_paths:
+        if not installations:
             if self._running_processes:
                 self._running_processes = {}
                 self._apply_process_icons()
@@ -1010,14 +1012,14 @@ class MainWindow(QMainWindow):
         self._process_worker_running = True
         worker = threading.Thread(
             target=self._run_process_check,
-            args=(exe_paths,),
+            args=(installations,),
             daemon=True,
         )
         worker.start()
 
-    def _run_process_check(self, exe_paths: list[str]) -> None:
+    def _run_process_check(self, installations: list[Installation]) -> None:
         try:
-            running = self.process_service.running_processes_by_path(exe_paths)
+            running = self.process_service.running_processes_by_installation(installations)
         except (OSError, ValueError, json.JSONDecodeError):
             running = {}
         self.process_notifier.result_ready.emit(running)
@@ -1049,19 +1051,10 @@ class MainWindow(QMainWindow):
             item.setToolTip(tooltip)
 
     def _process_ids_for_installation(self, installation: Installation) -> list[int]:
-        normalized_path = self._normalize_exe_path(installation.exe_path)
-        return self._running_processes.get(normalized_path, [])
+        return self._running_processes.get(installation.id, [])
 
     def _is_installation_running(self, installation: Installation) -> bool:
         return bool(self._process_ids_for_installation(installation))
-
-    def _normalize_exe_path(self, exe_path: str) -> str:
-        if not exe_path.strip():
-            return ""
-        try:
-            return str(Path(exe_path).expanduser().resolve()).lower()
-        except OSError:
-            return str(Path(exe_path).expanduser()).lower()
 
     def _with_cheat_glow(self, icon: QIcon) -> QIcon:
         size = QSize(48, 48)
@@ -1133,7 +1126,7 @@ class MainWindow(QMainWindow):
         installation = self._current_installation()
         if installation is None:
             return
-        exe_path = Path(installation.exe_path)
+        exe_path = self.launcher_service.resolve_executable_path(installation)
         if not exe_path.exists():
             QMessageBox.warning(
                 self,
@@ -1142,10 +1135,7 @@ class MainWindow(QMainWindow):
             )
             return
         try:
-            subprocess.Popen(
-                ["explorer.exe", f"/select,{exe_path}"],
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(exe_path.parent)))
         except OSError as error:
             QMessageBox.critical(
                 self,
@@ -1158,7 +1148,7 @@ class MainWindow(QMainWindow):
         if installation is None:
             return
         try:
-            stopped = self.process_service.terminate_processes(installation.exe_path)
+            stopped = self.process_service.terminate_processes(installation)
         except OSError as error:
             QMessageBox.critical(
                 self,

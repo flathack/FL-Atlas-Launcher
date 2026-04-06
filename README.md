@@ -56,7 +56,7 @@ The launcher supports **German** and **English**. The language can be changed in
 
 ## Requirements
 
-- Windows 10 / 11
+- Windows 10 / 11 or a modern Linux desktop
 - Python 3.8+
 - [PySide6](https://pypi.org/project/PySide6/) >= 6.8, < 7.0
 - [pefile](https://pypi.org/project/pefile/) >= 2024.8.26
@@ -66,6 +66,15 @@ The launcher supports **German** and **English**. The language can be changed in
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+python -m app.main
+```
+
+On Linux:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 python -m app.main
 ```
@@ -86,6 +95,22 @@ All settings are stored in a local JSON file at:
 ```
 ~/.fl-atlas-launcher/config.json
 ```
+
+## Linux notes
+
+Each installation can now be configured with a dedicated launch/runtime setup:
+
+- `Launch Method`: `Wine / Proton`, `Bottles`, `Steam`, `Lutris`, or `Automatic`
+- `Wine / Proton Prefix`: host path to the prefix, for example `~/.steam/steam/steamapps/compatdata/<id>/pfx`
+- `Runner Target`:
+  - Bottles: bottle name
+  - Steam: App ID or shortcut ID
+  - Lutris: game slug or numeric game ID
+- `Launch Arguments`: optional extra arguments passed to the launcher command
+
+Path handling on Linux accepts both native Linux paths and common Wine-style drive paths such as `Z:\home\user\...` or `C:\...` inside the configured prefix.
+
+MPID management on Linux works against the selected installation's Wine/Proton prefix (`user.reg`) instead of the host Windows registry. If you want MPID switching to work, set the correct prefix for that installation.
 
 ## License
 
