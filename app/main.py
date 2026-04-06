@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import logging
 import json
 from pathlib import Path
 import sys
@@ -12,11 +13,13 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from app.bootstrap import create_application
     from app.services.config_service import ConfigService
+    from app.services.log_service import LogService
     from app.services.update_service import UpdateService
     from app.ui.main_window import MainWindow
 else:
     from .bootstrap import create_application
     from .services.config_service import ConfigService
+    from .services.log_service import LogService
     from .services.update_service import UpdateService
     from .ui.main_window import MainWindow
 
@@ -25,9 +28,7 @@ SHOW_CHEAT_FEATURES = True
 
 
 def _write_startup_log(error_text: str) -> Path:
-    log_dir = Path.home() / ".fl-atlas-launcher"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = log_dir / "startup-error.log"
+    log_path = LogService.startup_log_path()
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     log_path.write_text(f"[{timestamp}]\n{error_text}\n", encoding="utf-8")
     return log_path
@@ -65,10 +66,14 @@ def _read_theme_before_app() -> str:
 
 def main() -> int:
     try:
+        log_path = LogService.configure()
+        logger = logging.getLogger("fl_atlas.main")
         theme = _read_theme_before_app()
+        logger.info("Starting FL Atlas Launcher %s with theme=%s", APP_VERSION, theme)
         app = create_application(theme)
         config_service = ConfigService()
         if UpdateService().check_and_apply_startup_update(APP_VERSION):
+            logger.info("Startup update applied, exiting for restart")
             return 0
         window = MainWindow(
             config_service=config_service,
@@ -76,9 +81,14 @@ def main() -> int:
             show_cheat_features=SHOW_CHEAT_FEATURES,
         )
         window.show()
+        logger.info("Main window shown. Log file: %s", log_path)
         return app.exec()
     except Exception:
         error_text = traceback.format_exc()
+        try:
+            logging.getLogger("fl_atlas.main").error("Fatal startup error\n%s", error_text)
+        except Exception:
+            pass
         log_path = _write_startup_log(error_text)
         _show_startup_error(error_text, log_path)
         return 1

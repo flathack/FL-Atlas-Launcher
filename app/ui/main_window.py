@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import logging
 import json
 from pathlib import Path
 import threading
@@ -81,6 +82,7 @@ class MainWindow(QMainWindow):
         self.show_cheat_features = bool(show_cheat_features)
         self.config = AppConfig.from_dict(config_service.config.to_dict())
         self.translator = Translator(self.config.language)
+        self.logger = logging.getLogger("fl_atlas.main_window")
         self.icon_provider = QFileIconProvider()
         self.exe_icon_service = ExeIconService()
         self.resolution_service = ResolutionService()
@@ -558,6 +560,7 @@ class MainWindow(QMainWindow):
             self,
         )
         if dialog.exec():
+            self.logger.info("Settings saved with %s installation(s)", len(dialog.installations))
             self.config.installations = dialog.installations
             language_changed = dialog.selected_language != self.config.language
             theme_changed = dialog.selected_theme != self.config.theme
@@ -634,6 +637,7 @@ class MainWindow(QMainWindow):
         try:
             self.mpid_service.apply_profile_values(profile.values, self._current_installation())
         except OSError as error:
+            self.logger.warning("MPID activation failed for profile '%s': %s", profile.name, error)
             QMessageBox.critical(
                 self,
                 self.tr("registry_error_title"),
@@ -641,6 +645,7 @@ class MainWindow(QMainWindow):
             )
             return
 
+        self.logger.info("MPID profile activated: %s", profile.name)
         self.statusBar().showMessage(self.tr("mpid_activated_status", name=profile.name), 4000)
 
     def _launch_selected_installation(self) -> None:
@@ -658,6 +663,7 @@ class MainWindow(QMainWindow):
 
         exe_path = self.launcher_service.resolve_executable_path(installation)
         if not exe_path.exists():
+            self.logger.warning("Launch blocked because executable is missing: %s", exe_path)
             QMessageBox.warning(
                 self,
                 self.tr("file_missing_title"),
@@ -671,6 +677,7 @@ class MainWindow(QMainWindow):
                 self.resolution_combo.currentText(),
             )
         except ValueError:
+            self.logger.warning("Launch blocked because resolution '%s' is invalid", self.resolution_combo.currentText())
             QMessageBox.warning(
                 self,
                 self.tr("invalid_resolution_title"),
@@ -678,6 +685,7 @@ class MainWindow(QMainWindow):
             )
             return
         except OSError as error:
+            self.logger.error("Preparing launch failed for '%s': %s", installation.name, error)
             QMessageBox.critical(
                 self,
                 self.tr("perfoptions_error_title"),
@@ -688,6 +696,7 @@ class MainWindow(QMainWindow):
         try:
             self.launcher_service.launch(installation)
         except OSError as error:
+            self.logger.error("Launch failed for '%s': %s", installation.name, error)
             QMessageBox.critical(
                 self,
                 self.tr("launch_failed_title"),
@@ -695,6 +704,13 @@ class MainWindow(QMainWindow):
             )
             return
 
+        self.logger.info(
+            "Launch started for '%s' with method=%s exe=%s resolution=%s",
+            installation.name,
+            installation.launch_method or "auto",
+            installation.exe_path,
+            self.resolution_combo.currentText(),
+        )
         message = self.tr(
             "launch_status",
             name=installation.name,

@@ -5,7 +5,8 @@ import json
 from pathlib import Path
 import subprocess
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QDesktopServices, QIcon
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -20,6 +21,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
     QSplitter,
     QTabWidget,
@@ -31,6 +33,7 @@ from app.i18n import Translator
 from app.models.installation import Installation
 from app.services.exe_icon_service import ExeIconService
 from app.services.ini_service import IniService
+from app.services.log_service import LogService
 from app.services.path_mapping_service import PathMappingService
 from app.themes import THEMES, THEME_DISPLAY_NAMES
 
@@ -101,10 +104,20 @@ class SettingsDialog(QDialog):
         self.button_box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
+        self.log_path_value_label = QLabel(str(LogService.log_path()))
+        self.log_path_value_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.log_hint_label = QLabel(self.tr("settings_log_hint"))
+        self.log_hint_label.setWordWrap(True)
+        self.log_text_edit = QPlainTextEdit()
+        self.log_text_edit.setReadOnly(True)
+        self.log_refresh_button = QPushButton(self.tr("refresh"))
+        self.log_open_folder_button = QPushButton(self.tr("show_in_explorer"))
+        self.log_clear_button = QPushButton(self.tr("clear_log"))
 
         self._build_ui()
         self._connect_signals()
         self._populate_installations()
+        self._refresh_log_view()
 
     @property
     def installations(self) -> list[Installation]:
@@ -197,6 +210,26 @@ class SettingsDialog(QDialog):
 
         tabs.addTab(general_tab, self.tr("settings_general"))
 
+        # --- Log tab ---
+        log_tab = QWidget()
+        log_layout = QVBoxLayout(log_tab)
+        log_form = QFormLayout()
+        log_form.setContentsMargins(24, 24, 24, 0)
+        log_form.setVerticalSpacing(16)
+        log_form.addRow(self.tr("log_file"), self.log_path_value_label)
+        log_form.addRow(self.tr("log_rotation"), QLabel(self.tr("log_rotation_value")))
+        log_layout.addLayout(log_form)
+        log_layout.addWidget(self.log_hint_label)
+        self.log_text_edit.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        log_layout.addWidget(self.log_text_edit, 1)
+        log_actions = QHBoxLayout()
+        log_actions.addWidget(self.log_refresh_button)
+        log_actions.addWidget(self.log_open_folder_button)
+        log_actions.addWidget(self.log_clear_button)
+        log_actions.addStretch(1)
+        log_layout.addLayout(log_actions)
+        tabs.addTab(log_tab, self.tr("settings_log"))
+
         root_layout = QVBoxLayout(self)
         root_layout.addWidget(tabs)
         root_layout.addWidget(self.button_box)
@@ -229,6 +262,9 @@ class SettingsDialog(QDialog):
         self.detect_lutris_button.clicked.connect(self._detect_lutris_installation)
         self.browse_prefix_button.clicked.connect(self._browse_prefix_path)
         self.browse_perf_button.clicked.connect(self._browse_perf_options)
+        self.log_refresh_button.clicked.connect(self._refresh_log_view)
+        self.log_open_folder_button.clicked.connect(self._open_log_directory)
+        self.log_clear_button.clicked.connect(self._clear_log_view)
         self.button_box.accepted.connect(self._on_accept)
         self.button_box.rejected.connect(self.reject)
 
@@ -666,6 +702,23 @@ class SettingsDialog(QDialog):
 
     def _current_prefix_text(self) -> str:
         return self.prefix_path_edit.text().strip()
+
+    def _refresh_log_view(self) -> None:
+        log_text = LogService.read_log_text()
+        if log_text:
+            self.log_text_edit.setPlainText(log_text)
+        else:
+            self.log_text_edit.setPlainText(self.tr("log_empty_message"))
+        cursor = self.log_text_edit.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+        self.log_text_edit.setTextCursor(cursor)
+
+    def _clear_log_view(self) -> None:
+        LogService.clear_log()
+        self._refresh_log_view()
+
+    def _open_log_directory(self) -> None:
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(LogService.app_data_dir())))
 
     def _on_accept(self) -> None:
         self._save_form_to_current_item()
