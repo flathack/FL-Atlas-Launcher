@@ -657,6 +657,7 @@ class MainWindow(QMainWindow):
     def _open_mpid_dialog(self) -> None:
         dialog = MpidDialog(
             self.config.mpid_profiles,
+            self.config.mpid_servers,
             self.mpid_service,
             self._current_installation(),
             self.config.mpid_sync_path,
@@ -666,6 +667,7 @@ class MainWindow(QMainWindow):
         previous_sync_path = self.config.mpid_sync_path
         if dialog.exec():
             self.config.mpid_profiles = dialog.profiles
+            self.config.mpid_servers = dialog.servers
             self.config.mpid_sync_path = dialog.sync_path
             self._persist_config()
             self.statusBar().showMessage(self.tr("mpid_profiles_saved"), 4000)
@@ -927,12 +929,17 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            result = self.transfer_service.sync_profiles(sync_dir, config_snapshot.mpid_profiles)
+            result = self.transfer_service.sync_profiles(
+                sync_dir,
+                config_snapshot.mpid_profiles,
+                config_snapshot.mpid_servers,
+            )
             self.sync_notifier.result_ready.emit(
                 request_id,
                 {
                     "state": "online",
                     "profiles": result.profiles,
+                    "servers": result.servers,
                     "imported": result.imported,
                     "updated": result.updated,
                 },
@@ -952,8 +959,11 @@ class MainWindow(QMainWindow):
 
         if state == "online":
             profiles = result.get("profiles")
+            servers = result.get("servers")
             if isinstance(profiles, list):
                 self.config.mpid_profiles = profiles
+                if isinstance(servers, list):
+                    self.config.mpid_servers = servers
                 self._persist_config()
                 self._populate_mpid_profiles()
 
