@@ -32,7 +32,6 @@ SHIP_HANDLING_KEYS = (
     "angular_drag",
     "rotation_inertia",
 )
-SECTION_HEADER = "[Object]"
 
 
 @dataclass(slots=True)
@@ -284,28 +283,21 @@ class CheatService:
 
     def apply_reveal_everything(self, installation: Installation) -> RevealResult:
         game_root = self.resolve_game_root(installation)
-        system_root = game_root / "DATA" / "UNIVERSE" / "SYSTEMS"
-        universe_path = game_root / "DATA" / "UNIVERSE" / "universe.ini"
+        data_root = game_root / "DATA"
+        if not data_root.exists():
+            return RevealResult(changed_files=0)
+
+        visit_pattern = re.compile(
+            r"^(\s*visit\s*=\s*)(?!1\s*(?:[;#].*)?$)\S+(.*)$",
+            re.IGNORECASE | re.MULTILINE,
+        )
 
         changed_documents: list[tuple[Path, TextDocument, str]] = []
-
-        if universe_path.exists():
-            universe_document = self._read_text_document(universe_path)
-            updated_universe = re.sub(
-                r"^(\s*visit\s*=\s*)128(\s*(?:[;#].*)?)$",
-                r"\g<1>1\g<2>",
-                universe_document.text,
-                flags=re.IGNORECASE | re.MULTILINE,
-            )
-            if updated_universe != universe_document.text:
-                changed_documents.append((universe_path, universe_document, updated_universe))
-
-        if system_root.exists():
-            for ini_file in sorted(path for path in system_root.rglob("*.ini") if path.is_file()):
-                document = self._read_text_document(ini_file)
-                updated_text, changed = self._process_system_ini_text(document.text)
-                if changed:
-                    changed_documents.append((ini_file, document, updated_text))
+        for ini_file in sorted(path for path in data_root.rglob("*.ini") if path.is_file()):
+            document = self._read_text_document(ini_file)
+            updated_text = visit_pattern.sub(r"\g<1>1\2", document.text)
+            if updated_text != document.text:
+                changed_documents.append((ini_file, document, updated_text))
 
         if not changed_documents:
             return RevealResult(changed_files=0)
@@ -950,61 +942,6 @@ class CheatService:
             return None
         key, _value = stripped.split("=", 1)
         return key.strip().lower()
-
-    def _process_system_ini_text(self, text: str) -> tuple[str, bool]:
-        lines = text.splitlines()
-        newline = self._detect_newline(text)
-        if not lines:
-            return text, False
-
-        result: list[str] = []
-        changed = False
-        index = 0
-        while index < len(lines):
-            line = lines[index]
-            if line.strip() != SECTION_HEADER:
-                result.append(line)
-                index += 1
-                continue
-
-            block = [line]
-            index += 1
-            while index < len(lines) and not lines[index].startswith("["):
-                block.append(lines[index])
-                index += 1
-
-            updated_block, block_changed = self._process_object_block(block)
-            result.extend(updated_block)
-            changed = changed or block_changed
-
-        updated_text = newline.join(result)
-        if text.endswith(("\r\n", "\n", "\r")):
-            updated_text += newline
-        return updated_text, changed
-
-    def _process_object_block(self, lines: list[str]) -> tuple[list[str], bool]:
-        archetype_index = None
-        visit_index = None
-        for index, line in enumerate(lines):
-            key = self._extract_key(line)
-            if key == "archetype":
-                archetype_index = index
-            elif key == "visit":
-                visit_index = index
-
-        if visit_index is not None:
-            current_value = self._extract_value(lines[visit_index])
-            if current_value == "1":
-                return lines, False
-            updated = list(lines)
-            updated[visit_index] = self._build_visit_line(lines[visit_index])
-            return updated, True
-
-        reference_line = lines[archetype_index] if archetype_index is not None else self._find_reference_line(lines)
-        insert_at = archetype_index + 1 if archetype_index is not None else 1
-        updated = list(lines)
-        updated.insert(insert_at, self._build_visit_line(reference_line))
-        return updated, True
 
     def _extract_value(self, line: str) -> str | None:
         stripped = line.strip()

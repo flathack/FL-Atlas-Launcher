@@ -12,6 +12,8 @@ class AppConfig:
     language: str = "de"
     cheater_mode: bool = False
     selected_resolution: str = ""
+    hudshift_enabled: bool = False
+    hudshift_aspect_ratio: str = "16:9"
     last_installation_id: str = ""
     faction_reputations: dict[str, dict[str, float]] = field(default_factory=dict)
     selected_ships: dict[str, str] = field(default_factory=dict)
@@ -26,6 +28,8 @@ class AppConfig:
             "language": self.language,
             "cheater_mode": self.cheater_mode,
             "selected_resolution": self.selected_resolution,
+            "hudshift_enabled": self.hudshift_enabled,
+            "hudshift_aspect_ratio": self.hudshift_aspect_ratio,
             "last_installation_id": self.last_installation_id,
             "faction_reputations": self.faction_reputations,
             "selected_ships": self.selected_ships,
@@ -88,6 +92,8 @@ class AppConfig:
             language=data.get("language", "de"),
             cheater_mode=bool(data.get("cheater_mode", False)),
             selected_resolution=data.get("selected_resolution", ""),
+            hudshift_enabled=bool(data.get("hudshift_enabled", False)),
+            hudshift_aspect_ratio=str(data.get("hudshift_aspect_ratio", "16:9")).strip() or "16:9",
             last_installation_id=str(data.get("last_installation_id", "")).strip(),
             faction_reputations=faction_reputations,
             selected_ships={

@@ -50,6 +50,7 @@ from app.services.npc_rumor_service import NpcRumorService
 from app.services.process_service import ProcessService
 from app.services.remote_link_service import RemoteLinkService
 from app.services.resolution_service import ResolutionService
+from app.services.hudshift_service import HudShiftService
 from app.services.ship_render_service import ShipRenderService
 from app.services.trade_route_service import TradeRouteService
 from app.ui.mpid_dialog import MpidDialog
@@ -137,6 +138,10 @@ class MainWindow(QMainWindow):
 
         self.mpid_combo = QComboBox()
         self.resolution_combo = QComboBox()
+        self.hudshift_checkbox = QCheckBox(self.tr("hudshift"))
+        self.hudshift_checkbox.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.hudshift_aspect_combo = QComboBox()
+        self.hudshift_service = HudShiftService()
         self.launch_button = QPushButton(self.tr("start"))
         self.launch_button.setMinimumHeight(40)
         self.sync_timer = QTimer(self)
@@ -154,6 +159,7 @@ class MainWindow(QMainWindow):
         self._connect_signals()
         self._populate_mpid_profiles()
         self._populate_resolutions()
+        self._populate_hudshift()
         self._populate_installations()
         self._update_launch_state()
         self._refresh_sync_state(trigger_sync=True)
@@ -249,6 +255,8 @@ class MainWindow(QMainWindow):
         action_layout.addWidget(self.mpid_combo, 2)
         action_layout.addWidget(QLabel(self.tr("resolution")))
         action_layout.addWidget(self.resolution_combo, 1)
+        action_layout.addWidget(self.hudshift_checkbox)
+        action_layout.addWidget(self.hudshift_aspect_combo)
         self.launch_button.setMinimumWidth(180)
         action_layout.addWidget(self.launch_button)
 
@@ -471,6 +479,8 @@ class MainWindow(QMainWindow):
         self.mpid_combo.currentIndexChanged.connect(self._apply_selected_mpid_profile)
         self.launch_button.clicked.connect(self._launch_selected_installation)
         self.resolution_combo.currentTextChanged.connect(self._save_selected_resolution)
+        self.hudshift_checkbox.toggled.connect(self._on_hudshift_toggled)
+        self.hudshift_aspect_combo.currentTextChanged.connect(self._save_hudshift_aspect_ratio)
         if self.show_cheat_features:
             self.cheater_mode_switch.toggled.connect(self._toggle_cheater_mode)
             self.cruise_charge_slider.valueChanged.connect(self._apply_cruise_charge_time)
@@ -557,6 +567,43 @@ class MainWindow(QMainWindow):
             self.resolution_combo.setCurrentText(unique_resolutions[0])
             self.config.selected_resolution = unique_resolutions[0]
 
+    def _populate_hudshift(self) -> None:
+        ratios = self.hudshift_service.available_aspect_ratios()
+        self.hudshift_aspect_combo.clear()
+        self.hudshift_aspect_combo.addItems(ratios)
+        if self.config.hudshift_aspect_ratio in ratios:
+            self.hudshift_aspect_combo.setCurrentText(self.config.hudshift_aspect_ratio)
+        self.hudshift_checkbox.setChecked(self.config.hudshift_enabled)
+        self.hudshift_aspect_combo.setEnabled(self.config.hudshift_enabled)
+        self._sync_hudshift_to_installation()
+
+    def _sync_hudshift_to_installation(self) -> None:
+        installation = self._current_installation()
+        if installation is None:
+            return
+        active = self.hudshift_service.is_active(installation)
+        self.hudshift_checkbox.blockSignals(True)
+        self.hudshift_checkbox.setChecked(active)
+        self.hudshift_aspect_combo.setEnabled(active)
+        self.hudshift_checkbox.blockSignals(False)
+        if active:
+            detected = self.hudshift_service.detect_aspect_ratio(installation)
+            ratios = self.hudshift_service.available_aspect_ratios()
+            if detected in ratios:
+                self.hudshift_aspect_combo.blockSignals(True)
+                self.hudshift_aspect_combo.setCurrentText(detected)
+                self.hudshift_aspect_combo.blockSignals(False)
+
+    def _on_hudshift_toggled(self, checked: bool) -> None:
+        self.config.hudshift_enabled = checked
+        self.hudshift_aspect_combo.setEnabled(checked)
+        self._persist_config()
+
+    def _save_hudshift_aspect_ratio(self, ratio: str) -> None:
+        if ratio:
+            self.config.hudshift_aspect_ratio = ratio
+            self._persist_config()
+
     def _populate_installations(self) -> None:
         self.installation_list.clear()
         last_id = self.config.last_installation_id
@@ -590,6 +637,8 @@ class MainWindow(QMainWindow):
         connection_label = self._connection_badge_text(installation)
         if connection_label:
             base_icon = self._with_connection_badge(base_icon, connection_label)
+        if self.hudshift_service.is_active(installation):
+            base_icon = self._with_hudshift_badge(base_icon)
         if installation.cheater_mode_enabled:
             base_icon = self._with_cheat_glow(base_icon)
         if self._is_installation_running(installation):
@@ -616,6 +665,7 @@ class MainWindow(QMainWindow):
         self._populate_mpid_profiles()
         self._update_launch_state()
         self._sync_cheat_panel_to_installation()
+        self._sync_hudshift_to_installation()
         self._show_last_played_status()
 
     def _show_last_played_status(self) -> None:
@@ -774,6 +824,23 @@ class MainWindow(QMainWindow):
                 self.tr("perfoptions_error_message", error=error),
             )
             return
+
+        if self.hudshift_checkbox.isChecked():
+            try:
+                aspect_ratio = self.hudshift_aspect_combo.currentText()
+                self.hudshift_service.apply(installation, aspect_ratio)
+                self.logger.info("HudShift applied with aspect ratio %s", aspect_ratio)
+                current_item = self.installation_list.currentItem()
+                if current_item is not None:
+                    current_item.setIcon(self._icon_for_installation(installation))
+            except Exception as error:
+                self.logger.error("HudShift failed for '%s': %s", installation.name, error)
+                QMessageBox.critical(
+                    self,
+                    self.tr("hudshift_error_title"),
+                    self.tr("hudshift_error_message", error=error),
+                )
+                return
 
         try:
             self.launcher_service.launch(installation)
@@ -1273,6 +1340,44 @@ class MainWindow(QMainWindow):
         if method == "windows":
             return "Windows"
         return ""
+
+    def _with_hudshift_badge(self, icon: QIcon) -> QIcon:
+        size = QSize(48, 48)
+        pixmap = icon.pixmap(size)
+        if pixmap.size() != size:
+            pixmap = pixmap.scaled(size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            padded = pixmap.__class__(size)
+            padded.fill(QColor(0, 0, 0, 0))
+            p = QPainter(padded)
+            x = (size.width() - pixmap.width()) // 2
+            y = (size.height() - pixmap.height()) // 2
+            p.drawPixmap(x, y, pixmap)
+            p.end()
+            pixmap = padded
+
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        font = QFont()
+        font.setPointSize(5)
+        font.setBold(True)
+        painter.setFont(font)
+
+        metrics = QFontMetrics(font)
+        label = "HS"
+        text_width = metrics.horizontalAdvance(label) + 6
+        text_height = metrics.height() + 2
+        x = size.width() - text_width - 2
+        y = 2
+
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(0, 120, 215, 220))
+        painter.drawRoundedRect(x, y, text_width, text_height, 4, 4)
+
+        painter.setPen(QColor(255, 255, 255))
+        painter.drawText(x + 3, y, text_width - 6, text_height, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignCenter, label)
+        painter.end()
+        return QIcon(pixmap)
 
     def _with_connection_badge(self, icon: QIcon, label: str) -> QIcon:
         size = QSize(48, 48)

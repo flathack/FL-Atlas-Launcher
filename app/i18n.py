@@ -382,6 +382,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "ship_class_light": "Leicht",
         "ship_class_heavy": "Schwer",
         "ship_class_super_heavy": "Sehr schwer",
+        "hudshift": "HudShift",
+        "hudshift_aspect_ratio": "Seitenverhältnis",
+        "hudshift_applied_status": "HudShift aktiviert ({ratio}) für {name}",
+        "hudshift_error_title": "HudShift Fehler",
+        "hudshift_error_message": "HudShift konnte nicht angewendet werden:\n{error}",
     },
     "en": {
         "app_title": "FL Atlas Launcher {version}",
@@ -763,6 +768,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "ship_class_light": "Light",
         "ship_class_heavy": "Heavy",
         "ship_class_super_heavy": "Super Heavy",
+        "hudshift": "HudShift",
+        "hudshift_aspect_ratio": "Aspect Ratio",
+        "hudshift_applied_status": "HudShift enabled ({ratio}) for {name}",
+        "hudshift_error_title": "HudShift Error",
+        "hudshift_error_message": "HudShift could not be applied:\n{error}",
     },
 }
 

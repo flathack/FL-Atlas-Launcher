@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, UTC
 from pathlib import Path
 
-from app.models.mpid_profile import MpidProfile, MpidServer
+from app.models.mpid_profile import MpidProfile, MpidProfileServer, MpidServer, RegistryValue
 
 
 EXPORT_FILE_NAME = "fl-atlas-mpids.json"
@@ -90,8 +90,28 @@ class MpidTransferService:
                 imported += 1
                 continue
 
+            changed = False
             if self._timestamp(incoming.updated_at) > self._timestamp(existing.updated_at):
-                merged[incoming.id] = self._clone_profile(incoming)
+                existing.name = incoming.name
+                existing.values = [RegistryValue.from_dict(v.to_dict()) for v in incoming.values]
+                existing.updated_at = incoming.updated_at
+                changed = True
+
+            existing_servers_map: dict[str, MpidProfileServer] = {
+                ps.server_id: ps for ps in existing.servers
+            }
+            for incoming_ps in incoming.servers:
+                existing_ps = existing_servers_map.get(incoming_ps.server_id)
+                if existing_ps is None:
+                    existing.servers.append(MpidProfileServer.from_dict(incoming_ps.to_dict()))
+                    changed = True
+                else:
+                    for character in incoming_ps.characters:
+                        if character not in existing_ps.characters:
+                            existing_ps.characters.append(character)
+                            changed = True
+
+            if changed:
                 updated += 1
 
         ordered_profiles = sorted(
