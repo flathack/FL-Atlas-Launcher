@@ -141,7 +141,7 @@ class MainWindow(QMainWindow):
         self.hudshift_checkbox = QCheckBox(self.tr("hudshift"))
         self.hudshift_checkbox.setCursor(Qt.CursorShape.PointingHandCursor)
         self.hudshift_aspect_combo = QComboBox()
-        self.hudshift_service = HudShiftService()
+        self.hudshift_service = HudShiftService(self._get_cheat_service())
         self.launch_button = QPushButton(self.tr("start"))
         self.launch_button.setMinimumHeight(40)
         self.sync_timer = QTimer(self)
@@ -1434,6 +1434,10 @@ class MainWindow(QMainWindow):
         if self._is_installation_running(installation):
             stop_action = menu.addAction(self.tr("stop_process"))
             stop_action.triggered.connect(self._stop_selected_installation_processes)
+        if self._get_cheat_service().has_any_backup(installation):
+            menu.addSeparator()
+            restore_action = menu.addAction(self.tr("restore_backups"))
+            restore_action.triggered.connect(self._restore_all_backups)
         menu.exec(self.installation_list.mapToGlobal(position))
 
     def _show_selected_installation_in_explorer(self) -> None:
@@ -1475,6 +1479,46 @@ class MainWindow(QMainWindow):
             self.tr("process_stop_status", name=installation.name, count=stopped),
             5000,
         )
+
+    def _restore_all_backups(self) -> None:
+        installation = self._current_installation()
+        if installation is None:
+            return
+        answer = QMessageBox.question(
+            self,
+            self.tr("restore_backups_confirm_title"),
+            self.tr("restore_backups_confirm_message"),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            restored = self._get_cheat_service().reset_all_mods(installation)
+        except OSError as error:
+            QMessageBox.critical(
+                self,
+                self.tr("restore_backups_confirm_title"),
+                str(error),
+            )
+            return
+        if restored:
+            installation.cheater_mode_enabled = False
+            self.config.hudshift_enabled = False
+            self._persist_config()
+            self._sync_hudshift_to_installation()
+            if self.show_cheat_features:
+                self._sync_cheat_panel_to_installation()
+            self._apply_process_icons()
+            self.statusBar().showMessage(
+                self.tr("restore_backups_done", count=restored, name=installation.name),
+                5000,
+            )
+        else:
+            self.statusBar().showMessage(
+                self.tr("restore_backups_none", name=installation.name),
+                5000,
+            )
 
     def _apply_cruise_charge_time(self, slider_value: int) -> None:
         self.cruise_charge_value_label.setText(

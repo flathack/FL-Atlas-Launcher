@@ -3,10 +3,14 @@ from __future__ import annotations
 import re
 import shutil
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from app.models.installation import Installation
 from app.resource_utils import resource_path
 from app.services.path_mapping_service import PathMappingService
+
+if TYPE_CHECKING:
+    from app.services.cheat_service import CheatService
 
 # FOV values per aspect ratio (WinCamera fovx, used for all cameras)
 ASPECT_RATIO_FOV: dict[str, float] = {
@@ -28,8 +32,9 @@ _ALL_CAMERA_SECTIONS = frozenset({
 
 
 class HudShiftService:
-    def __init__(self) -> None:
+    def __init__(self, cheat_service: CheatService | None = None) -> None:
         self.path_mapping_service = PathMappingService()
+        self._cheat_service = cheat_service
 
     @staticmethod
     def available_aspect_ratios() -> list[str]:
@@ -57,7 +62,7 @@ class HudShiftService:
         if not dacom_path.exists():
             return False
         try:
-            text = dacom_path.read_text(encoding="utf-8", errors="replace")
+            text = self._read_ini_text(dacom_path)
         except OSError:
             return False
         return bool(re.search(r"^\s*HudShift\.dll", text, re.MULTILINE | re.IGNORECASE))
@@ -72,7 +77,7 @@ class HudShiftService:
         if not cameras_path.exists():
             return "16:9"
         try:
-            text = cameras_path.read_text(encoding="utf-8", errors="replace")
+            text = self._read_ini_text(cameras_path)
         except OSError:
             return "16:9"
         in_wincamera = False
@@ -102,10 +107,23 @@ class HudShiftService:
 
     def apply(self, installation: Installation, aspect_ratio: str) -> None:
         game_root = self.resolve_game_root(installation)
+        self._backup_originals(installation, game_root)
         self._deploy_dll(game_root)
         self._register_in_dacom(game_root)
         self._update_cameras(game_root, aspect_ratio)
         self._create_hudshift_ini(game_root)
+
+    def _backup_originals(self, installation: Installation, game_root: Path) -> None:
+        if self._cheat_service is None:
+            return
+        files_to_backup: list[Path] = []
+        dacom = game_root / "EXE" / "dacom.ini"
+        cameras = game_root / "DATA" / "cameras.ini"
+        for path in (dacom, cameras):
+            if path.exists():
+                files_to_backup.append(path)
+        if files_to_backup:
+            self._cheat_service._backup_files(installation, "hudshift", files_to_backup)
 
     def remove(self, installation: Installation) -> None:
         game_root = self.resolve_game_root(installation)
@@ -125,11 +143,18 @@ class HudShiftService:
             return
         shutil.copy2(source, target)
 
+    def _read_ini_text(self, path: Path) -> str:
+        """Read an INI file, decoding from BINI format if necessary."""
+        raw = path.read_bytes()
+        if len(raw) >= 12 and raw[:4] == b"BINI" and self._cheat_service is not None:
+            return self._cheat_service._decode_bini_to_ini_text(raw)
+        return raw.decode("utf-8", errors="replace")
+
     def _register_in_dacom(self, game_root: Path) -> None:
         dacom_path = game_root / "EXE" / "dacom.ini"
         if not dacom_path.exists():
             return
-        text = dacom_path.read_text(encoding="utf-8", errors="replace")
+        text = self._read_ini_text(dacom_path)
         if re.search(r"^\s*HudShift\.dll", text, re.MULTILINE | re.IGNORECASE):
             return
         newline = "\r\n" if "\r\n" in text else "\n"
@@ -149,13 +174,13 @@ class HudShiftService:
                     insert_index = i + 1
         if insert_index is not None:
             lines.insert(insert_index, f"HudShift.dll{newline}")
-            dacom_path.write_text("".join(lines), encoding="utf-8")
+            dacom_path.write_text("".join(lines), encoding="utf-8", newline="")
 
     def _unregister_from_dacom(self, game_root: Path) -> None:
         dacom_path = game_root / "EXE" / "dacom.ini"
         if not dacom_path.exists():
             return
-        text = dacom_path.read_text(encoding="utf-8", errors="replace")
+        text = self._read_ini_text(dacom_path)
         new_text = re.sub(
             r"^[ \t]*HudShift\.dll[^\r\n]*\r?\n?",
             "",
@@ -163,14 +188,14 @@ class HudShiftService:
             flags=re.MULTILINE | re.IGNORECASE,
         )
         if new_text != text:
-            dacom_path.write_text(new_text, encoding="utf-8")
+            dacom_path.write_text(new_text, encoding="utf-8", newline="")
 
     def _update_cameras(self, game_root: Path, aspect_ratio: str) -> None:
         cameras_path = game_root / "DATA" / "cameras.ini"
         if not cameras_path.exists():
             return
         fov = ASPECT_RATIO_FOV.get(aspect_ratio, ASPECT_RATIO_FOV["16:9"])
-        text = cameras_path.read_text(encoding="utf-8", errors="replace")
+        text = self._read_ini_text(cameras_path)
         current_section: str | None = None
         lines = text.splitlines(keepends=True)
         result: list[str] = []
@@ -186,7 +211,7 @@ class HudShiftService:
                 ending = "\r\n" if line.endswith("\r\n") else ("\n" if line.endswith("\n") else "")
                 line = f"{indent}fovx = {fov}{ending}"
             result.append(line)
-        cameras_path.write_text("".join(result), encoding="utf-8")
+        cameras_path.write_text("".join(result), encoding="utf-8", newline="")
 
     def _create_hudshift_ini(self, game_root: Path) -> None:
         interface_dir = game_root / "DATA" / "INTERFACE"

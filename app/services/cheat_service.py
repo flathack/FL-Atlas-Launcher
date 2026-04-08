@@ -466,12 +466,40 @@ class CheatService:
         return self._backup_root(installation, mod_name).exists()
 
     def reset_all_mods(self, installation: Installation) -> int:
-        mod_names = ("cruise_charge", "cruise_disrupt", "jump_timing", "reveal_everything", "ship_handling", "npc_rumors")
+        mod_names = ("cruise_charge", "cruise_disrupt", "jump_timing", "reveal_everything", "ship_handling", "npc_rumors", "hudshift")
         restored = 0
         for mod_name in mod_names:
             if self._restore_backup(installation, mod_name):
                 restored += 1
+        # Clean up added files that aren't part of the originals
+        self._cleanup_added_files(installation)
         return restored
+
+    def has_any_backup(self, installation: Installation) -> bool:
+        try:
+            game_root = self.resolve_game_root(installation)
+        except FileNotFoundError:
+            return False
+        backup_dir = game_root / ".FLAtlasLauncher"
+        return backup_dir.exists() and any(backup_dir.iterdir())
+
+    def _cleanup_added_files(self, installation: Installation) -> None:
+        """Remove files that were added by the launcher (not part of original game)."""
+        try:
+            game_root = self.resolve_game_root(installation)
+        except FileNotFoundError:
+            return
+        added_files = [
+            game_root / "EXE" / "HudShift.dll",
+            game_root / "DATA" / "INTERFACE" / "HudShift.ini",
+            game_root / "EXE" / "FLAtlasRumors.dll",
+        ]
+        for path in added_files:
+            if path.exists():
+                try:
+                    path.unlink()
+                except OSError:
+                    pass
 
     def _constants_ini_path(self, installation: Installation) -> Path:
         return self.resolve_game_root(installation) / "DATA" / "constants.ini"
@@ -797,7 +825,8 @@ class CheatService:
                 out[base_id + index] = text
 
     def _backup_root(self, installation: Installation, mod_name: str) -> Path:
-        return self.storage_root / installation.id / mod_name
+        game_root = self.resolve_game_root(installation)
+        return game_root / ".FLAtlasLauncher" / mod_name
 
     def _backup_files(
         self,
@@ -855,6 +884,9 @@ class CheatService:
 
     def _read_text_document(self, path: Path) -> TextDocument:
         raw_data = path.read_bytes()
+        if self._is_bini_bytes(raw_data):
+            text = self._decode_bini_to_ini_text(raw_data)
+            return TextDocument(text=text, encoding="cp1252", newline="\n")
         encoding = self._detect_encoding(raw_data)
         text = raw_data.decode(encoding)
         newline = self._detect_newline(text)
