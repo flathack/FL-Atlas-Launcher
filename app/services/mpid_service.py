@@ -6,6 +6,7 @@ from pathlib import Path
 import os
 import re
 import subprocess
+import time
 
 from app.models.installation import Installation
 from app.models.mpid_profile import MpidProfile
@@ -381,8 +382,7 @@ class MpidService:
         values: dict[str, RegistryValue],
     ) -> None:
         section_line = self._wine_section_header()
-        rendered_values = [self._render_wine_value_line(values[name]) for name in sorted(values, key=str.lower)]
-        block = [section_line, *rendered_values, ""]
+        block = self._render_wine_section_block(values)
         section_range = self._find_wine_section(lines)
 
         updated_lines = list(lines)
@@ -416,6 +416,17 @@ class MpidService:
 
     def _wine_section_header(self) -> str:
         return f"[{self.REGISTRY_PATH.replace(chr(92), chr(92) * 2)}]"
+
+    def _render_wine_section_block(self, values: dict[str, RegistryValue]) -> list[str]:
+        rendered_values = [self._render_wine_value_line(values[name]) for name in sorted(values, key=str.lower)]
+        unix_timestamp = int(time.time())
+        filetime = (unix_timestamp * 10_000_000) + 116_444_736_000_000_000
+        return [
+            f"{self._wine_section_header()} {unix_timestamp}",
+            f"#time={filetime:x}",
+            *rendered_values,
+            "",
+        ]
 
     def _parse_wine_value_line(self, line: str) -> RegistryValue | None:
         match = self._REG_VALUE_PATTERN.match(line)
