@@ -14,3 +14,4 @@ build-x64/
 release-assets/
 build-linux/
 dist-linux/
+releases/
