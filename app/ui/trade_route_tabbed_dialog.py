@@ -4,7 +4,7 @@ import html
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QThread, Qt, Signal
-from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
+from PySide6.QtGui import QCloseEvent, QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -670,6 +670,16 @@ class _InnerSystemTab(QWidget, _LoadingMixin):
     def _forget_preview(self, dialog: TradeRoutePreviewDialog) -> None:
         self._preview_windows = [w for w in self._preview_windows if w is not dialog]
 
+    def shutdown(self) -> None:
+        self._cancel_worker()
+        self._stop_icon_loader()
+        for dialog in list(self._preview_windows):
+            try:
+                dialog.close()
+            except RuntimeError:
+                pass
+        self._preview_windows.clear()
+
 
 # ---------------------------------------------------------------------------
 #  Tab 2 – Trade Routes (cross-system)
@@ -986,6 +996,16 @@ class _TradeRoutesTab(QWidget, _LoadingMixin):
     def _forget_preview(self, dialog: TradeRoutePreviewDialog) -> None:
         self._preview_windows = [w for w in self._preview_windows if w is not dialog]
 
+    def shutdown(self) -> None:
+        self._cancel_worker()
+        self._stop_icon_loader()
+        for dialog in list(self._preview_windows):
+            try:
+                dialog.close()
+            except RuntimeError:
+                pass
+        self._preview_windows.clear()
+
 
 # ---------------------------------------------------------------------------
 #  Tab 3 – Round Trip
@@ -1294,6 +1314,16 @@ class _RoundTripTab(QWidget, _LoadingMixin):
     def _forget_detail(self, dialog: TradeRouteRoundTripDetailDialog) -> None:
         self._detail_windows = [w for w in self._detail_windows if w is not dialog]
 
+    def shutdown(self) -> None:
+        self._cancel_worker()
+        self._stop_icon_loader()
+        for dialog in list(self._detail_windows):
+            try:
+                dialog.close()
+            except RuntimeError:
+                pass
+        self._detail_windows.clear()
+
 
 # ---------------------------------------------------------------------------
 #  Main tabbed dialog
@@ -1361,6 +1391,14 @@ class TradeRouteTabbedDialog(QDialog):
         self.tabs.currentChanged.connect(self._on_tab_changed)
         # Start only the initially visible tab
         self._on_tab_changed(self.tabs.currentIndex())
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        for tab in (self._inner_tab, self._routes_tab, self._round_trip_tab):
+            try:
+                tab.shutdown()
+            except RuntimeError:
+                pass
+        super().closeEvent(event)
 
     def _on_tab_changed(self, index: int) -> None:
         tab = self.tabs.widget(index)
