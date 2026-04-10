@@ -42,6 +42,7 @@ from app.resource_utils import resource_path
 from app.services.cheat_service import CheatService
 from app.services.config_service import ConfigService
 from app.services.exe_icon_service import ExeIconService
+from app.services.font_scale_service import FontScaleService
 from app.services.ini_service import IniService
 from app.services.launcher_service import LauncherService
 from app.services.mpid_service import MpidService
@@ -88,6 +89,7 @@ class MainWindow(QMainWindow):
         self.icon_provider = QFileIconProvider()
         self.exe_icon_service = ExeIconService()
         self.resolution_service = ResolutionService()
+        self.font_scale_service = FontScaleService()
         self.ini_service = IniService()
         self.mpid_service = MpidService()
         self.transfer_service = MpidTransferService()
@@ -136,6 +138,8 @@ class MainWindow(QMainWindow):
 
         self.mpid_combo = QComboBox()
         self.resolution_combo = QComboBox()
+        self.font_scale_checkbox = QCheckBox(self.tr("font_scale"))
+        self.font_scale_checkbox.setCursor(Qt.CursorShape.PointingHandCursor)
         self.hudshift_checkbox = QCheckBox(self.tr("hudshift"))
         self.hudshift_checkbox.setCursor(Qt.CursorShape.PointingHandCursor)
         self.hudshift_aspect_combo = QComboBox()
@@ -158,6 +162,7 @@ class MainWindow(QMainWindow):
         self._populate_mpid_profiles()
         self._populate_resolutions()
         self._populate_hudshift()
+        self._populate_font_scale()
         self._populate_installations()
         self._update_launch_state()
         self._refresh_sync_state(trigger_sync=True)
@@ -253,6 +258,7 @@ class MainWindow(QMainWindow):
         action_layout.addWidget(self.mpid_combo, 2)
         action_layout.addWidget(QLabel(self.tr("resolution")))
         action_layout.addWidget(self.resolution_combo, 1)
+        action_layout.addWidget(self.font_scale_checkbox)
         action_layout.addWidget(self.hudshift_checkbox)
         action_layout.addWidget(self.hudshift_aspect_combo)
         self.launch_button.setMinimumWidth(180)
@@ -472,6 +478,7 @@ class MainWindow(QMainWindow):
         self.mpid_combo.currentIndexChanged.connect(self._apply_selected_mpid_profile)
         self.launch_button.clicked.connect(self._launch_selected_installation)
         self.resolution_combo.currentTextChanged.connect(self._save_selected_resolution)
+        self.font_scale_checkbox.toggled.connect(self._on_font_scale_toggled)
         self.hudshift_checkbox.toggled.connect(self._on_hudshift_toggled)
         self.hudshift_aspect_combo.currentTextChanged.connect(self._save_hudshift_aspect_ratio)
         if self.show_cheat_features:
@@ -584,6 +591,9 @@ class MainWindow(QMainWindow):
         self.hudshift_aspect_combo.setEnabled(self.config.hudshift_enabled)
         self._sync_hudshift_to_installation()
 
+    def _populate_font_scale(self) -> None:
+        self.font_scale_checkbox.setChecked(self.config.auto_font_scale)
+
     def _sync_hudshift_to_installation(self) -> None:
         installation = self._current_installation()
         if installation is None:
@@ -661,6 +671,7 @@ class MainWindow(QMainWindow):
     def _update_launch_state(self) -> None:
         has_installation = self._current_installation() is not None
         self.launch_button.setEnabled(has_installation)
+        self.font_scale_checkbox.setEnabled(has_installation)
         if self.show_cheat_features:
             self.cheater_mode_switch.setEnabled(has_installation)
         self.trade_routes_action.setEnabled(has_installation)
@@ -747,6 +758,7 @@ class MainWindow(QMainWindow):
             return
         self._populate_mpid_profiles()
         self._populate_resolutions()
+        self._populate_font_scale()
         self._populate_installations()
         self._refresh_sync_state(trigger_sync=False)
         self._update_cheat_panel_visibility()
@@ -756,6 +768,10 @@ class MainWindow(QMainWindow):
 
     def _save_selected_resolution(self, resolution: str) -> None:
         self.config.selected_resolution = resolution
+        self._persist_config()
+
+    def _on_font_scale_toggled(self, checked: bool) -> None:
+        self.config.auto_font_scale = checked
         self._persist_config()
 
     def _persist_config(self) -> None:
@@ -832,6 +848,20 @@ class MainWindow(QMainWindow):
             )
             return
 
+        try:
+            if self.font_scale_checkbox.isChecked():
+                self.font_scale_service.apply(installation, self.resolution_combo.currentText())
+            else:
+                self.font_scale_service.restore_original(installation)
+        except Exception as error:
+            self.logger.error("Font scaling failed for '%s': %s", installation.name, error)
+            QMessageBox.critical(
+                self,
+                self.tr("font_scale_error_title"),
+                self.tr("font_scale_error_message", error=error),
+            )
+            return
+
         if self.hudshift_checkbox.isChecked():
             try:
                 aspect_ratio = self.hudshift_aspect_combo.currentText()
@@ -882,6 +912,8 @@ class MainWindow(QMainWindow):
     def _rebuild_translated_ui(self) -> None:
         self.setWindowTitle(self.tr("app_title", version=self.app_version))
         self.launch_button.setText(self.tr("start"))
+        self.font_scale_checkbox.setText(self.tr("font_scale"))
+        self.hudshift_checkbox.setText(self.tr("hudshift"))
         central_widget = self.takeCentralWidget()
         if central_widget is not None:
             central_widget.deleteLater()
@@ -892,6 +924,7 @@ class MainWindow(QMainWindow):
         self._connect_signals()
         self._populate_mpid_profiles()
         self._populate_resolutions()
+        self._populate_font_scale()
         self._populate_installations()
         self._update_sync_indicator(self._sync_state or "unconfigured")
         self._sync_cheat_panel_to_installation()
@@ -1502,6 +1535,7 @@ class MainWindow(QMainWindow):
             return
         try:
             restored = self._get_cheat_service().reset_all_mods(installation)
+            font_restored = self.font_scale_service.restore_original(installation)
         except OSError as error:
             QMessageBox.critical(
                 self,
@@ -1509,16 +1543,19 @@ class MainWindow(QMainWindow):
                 str(error),
             )
             return
-        if restored:
+        total_restored = restored + (1 if font_restored else 0)
+        if total_restored:
             installation.cheater_mode_enabled = False
             self.config.hudshift_enabled = False
+            self.config.auto_font_scale = False
             self._persist_config()
             self._sync_hudshift_to_installation()
+            self._populate_font_scale()
             if self.show_cheat_features:
                 self._sync_cheat_panel_to_installation()
             self._apply_process_icons()
             self.statusBar().showMessage(
-                self.tr("restore_backups_done", count=restored, name=installation.name),
+                self.tr("restore_backups_done", count=total_restored, name=installation.name),
                 5000,
             )
         else:
