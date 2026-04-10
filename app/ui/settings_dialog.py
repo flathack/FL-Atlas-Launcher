@@ -34,6 +34,7 @@ from app.models.installation import Installation
 from app.services.exe_icon_service import ExeIconService
 from app.services.ini_service import IniService
 from app.services.log_service import LogService
+from app.services.lutris_runtime import build_lutris_environment
 from app.services.path_mapping_service import PathMappingService
 from app.themes import THEMES, THEME_DISPLAY_NAMES
 
@@ -286,10 +287,10 @@ class SettingsDialog(QDialog):
     def _icon_for_installation(self, installation: Installation) -> QIcon:
         resolved_path = self.path_mapping_service.resolve_path(installation.exe_path, installation.prefix_path)
         icon = None
-        if resolved_path is not None:
-            icon = self.exe_icon_service.icon_for_executable(resolved_path)
         if installation.launch_method.strip().lower() == "lutris":
-            icon = icon or self.exe_icon_service.icon_for_lutris_slug(installation.runner_target)
+            icon = self.exe_icon_service.icon_for_lutris_slug(installation.runner_target)
+        if icon is None and resolved_path is not None:
+            icon = self.exe_icon_service.icon_for_executable(resolved_path)
         if icon is not None:
             return icon
         return self.style().standardIcon(self.style().StandardPixmap.SP_ComputerIcon)
@@ -649,6 +650,7 @@ class SettingsDialog(QDialog):
                 capture_output=True,
                 text=True,
                 check=False,
+                env=build_lutris_environment(),
             )
         except OSError:
             return []

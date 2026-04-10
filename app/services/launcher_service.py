@@ -8,6 +8,7 @@ import subprocess
 
 from app.models.installation import Installation
 from app.services.ini_service import IniService
+from app.services.lutris_runtime import build_lutris_environment
 from app.services.path_mapping_service import PathMappingService
 from app.services.resolution_service import ResolutionService
 
@@ -88,6 +89,8 @@ class LauncherService:
         environment = os.environ.copy()
         if os.name != "nt" and installation.prefix_path.strip() and installation.launch_method.strip().lower() != "bottles":
             environment["WINEPREFIX"] = str(self.path_mapping_service.resolve_path(installation.prefix_path))
+        if installation.launch_method.strip().lower() == "lutris":
+            environment = build_lutris_environment(environment)
         return environment
 
     def _resolve_bottle_name(self, installation: Installation, exe_path: Path) -> str:

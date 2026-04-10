@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import base64
+import json
 from pathlib import Path
 import os
 import re
+import subprocess
 
 from app.models.installation import Installation
 from app.models.mpid_profile import MpidProfile
 from app.models.mpid_profile import RegistryValue
+from app.services.lutris_runtime import build_lutris_environment
 from app.services.path_mapping_service import PathMappingService
 
 try:
@@ -30,6 +33,7 @@ class MpidService:
 
     def __init__(self) -> None:
         self.path_mapping_service = PathMappingService()
+        self._lutris_game_index: dict[str, dict[str, str]] | None = None
 
     def read_current_profile_values(self, installation: Installation | None = None) -> list[RegistryValue]:
         if self._use_native_windows_registry():
@@ -164,9 +168,7 @@ class MpidService:
         return deleted
 
     def _wine_registry_file(self, installation: Installation | None) -> Path | None:
-        if installation is None or not installation.prefix_path.strip():
-            return None
-        prefix_path = self.path_mapping_service.resolve_path(installation.prefix_path)
+        prefix_path = self._resolve_wine_prefix_path(installation)
         if prefix_path is None:
             return None
         return prefix_path / "user.reg"
@@ -174,11 +176,186 @@ class MpidService:
     def _require_wine_registry_file(self, installation: Installation | None) -> Path:
         registry_path = self._wine_registry_file(installation)
         if registry_path is None:
-            raise OSError("For Linux MPID management, a Wine/Proton prefix path must be configured.")
+            raise OSError("For Linux MPID management, a Wine/Proton prefix must be configured or auto-detectable.")
         registry_path.parent.mkdir(parents=True, exist_ok=True)
         if not registry_path.exists():
             registry_path.write_text("WINE REGISTRY Version 2\n\n", encoding="utf-8")
         return registry_path
+
+    def _resolve_wine_prefix_path(self, installation: Installation | None) -> Path | None:
+        if installation is None:
+            return None
+
+        explicit_prefix = self.path_mapping_service.resolve_path(installation.prefix_path)
+        if explicit_prefix is not None:
+            return explicit_prefix
+
+        inferred_prefix = self._infer_prefix_from_executable_path(installation)
+        if inferred_prefix is not None:
+            return inferred_prefix
+
+        if installation.launch_method.strip().lower() == "lutris":
+            return self._resolve_lutris_prefix_path(installation)
+        return None
+
+    def _infer_prefix_from_executable_path(self, installation: Installation) -> Path | None:
+        exe_path = self.path_mapping_service.resolve_path(installation.exe_path, installation.prefix_path)
+        if exe_path is None:
+            return None
+
+        search_roots = [exe_path] if exe_path.is_dir() else [exe_path.parent]
+        search_roots.extend(exe_path.parents)
+        seen: set[Path] = set()
+
+        for current in search_roots:
+            if current in seen:
+                continue
+            seen.add(current)
+            if (current / "user.reg").exists() or (current / "system.reg").exists():
+                return current
+            if (current / "drive_c").is_dir() or (current / "dosdevices").is_dir():
+                return current
+
+        for current in search_roots:
+            if current.name.lower().startswith("drive_"):
+                return current.parent
+        return None
+
+    def _resolve_lutris_prefix_path(self, installation: Installation) -> Path | None:
+        target = installation.runner_target.strip()
+        if not target:
+            return None
+
+        game_info = self._load_lutris_game_index().get(target.casefold(), {})
+        directory = str(game_info.get("directory") or "").strip()
+        if directory:
+            return Path(directory).expanduser()
+
+        resolved_slug = str(game_info.get("slug") or "").strip()
+        for config_path in self._iter_matching_lutris_game_configs(target, resolved_slug):
+            prefix = self._extract_lutris_prefix_from_config(config_path, directory)
+            if prefix is not None:
+                return prefix
+        return None
+
+    def _iter_matching_lutris_game_configs(self, target: str, resolved_slug: str = "") -> list[Path]:
+        games_dir = Path.home() / ".local" / "share" / "lutris" / "games"
+        if not games_dir.exists():
+            return []
+
+        identifiers = {value.casefold() for value in (target, resolved_slug) if value}
+        matches: list[Path] = []
+        for config_path in sorted(games_dir.glob("*.yml")):
+            stem = config_path.stem.casefold()
+            if target.isdigit() and stem.endswith(f"-{target}"):
+                matches.append(config_path)
+                continue
+
+            metadata = self._read_lutris_config_metadata(config_path)
+            if any(str(metadata.get(key) or "").casefold() in identifiers for key in ("game_slug", "slug", "name")):
+                matches.append(config_path)
+        return matches
+
+    def _read_lutris_config_metadata(self, config_path: Path) -> dict[str, str]:
+        metadata = {"game_slug": "", "slug": "", "name": ""}
+        try:
+            lines = config_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+        except OSError:
+            return metadata
+
+        for line in lines:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or line.startswith((" ", "\t")):
+                continue
+            for key in tuple(metadata.keys()):
+                prefix = f"{key}:"
+                if stripped.startswith(prefix):
+                    metadata[key] = stripped.split(":", 1)[1].strip().strip("'\"")
+        return metadata
+
+    def _extract_lutris_prefix_from_config(self, config_path: Path, game_directory: str = "") -> Path | None:
+        try:
+            lines = config_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+        except OSError:
+            return None
+
+        in_game_section = False
+        game_indent = 0
+        for raw_line in lines:
+            stripped = raw_line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+
+            indent = len(raw_line) - len(raw_line.lstrip(" "))
+            if not in_game_section:
+                if stripped == "game:":
+                    in_game_section = True
+                    game_indent = indent
+                continue
+
+            if indent <= game_indent and not raw_line.startswith(" " * (game_indent + 1)):
+                break
+
+            if not stripped.startswith("prefix:"):
+                continue
+
+            raw_value = stripped.split(":", 1)[1].strip().strip("'\"")
+            if not raw_value:
+                return None
+            if "$GAMEDIR" in raw_value:
+                if not game_directory:
+                    return None
+                raw_value = raw_value.replace("$GAMEDIR", game_directory)
+            prefix_path = Path(raw_value).expanduser()
+            return prefix_path
+        return None
+
+    def _load_lutris_game_index(self) -> dict[str, dict[str, str]]:
+        if self._lutris_game_index is not None:
+            return self._lutris_game_index
+
+        index: dict[str, dict[str, str]] = {}
+        try:
+            completed = subprocess.run(
+                ["lutris", "--list-games", "--json"],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=build_lutris_environment(),
+            )
+        except OSError:
+            self._lutris_game_index = index
+            return index
+
+        if completed.returncode != 0 or not completed.stdout.strip():
+            self._lutris_game_index = index
+            return index
+
+        try:
+            payload = json.loads(completed.stdout)
+        except json.JSONDecodeError:
+            self._lutris_game_index = index
+            return index
+
+        if not isinstance(payload, list):
+            self._lutris_game_index = index
+            return index
+
+        for entry in payload:
+            if not isinstance(entry, dict):
+                continue
+            slug = str(entry.get("slug") or "").strip()
+            directory = str(entry.get("directory") or "").strip()
+            game_id = str(entry.get("id") or "").strip()
+            name = str(entry.get("name") or "").strip()
+            info = {"slug": slug, "directory": directory, "id": game_id, "name": name}
+            for key in (slug, game_id, name):
+                normalized = str(key or "").strip()
+                if normalized:
+                    index[normalized.casefold()] = info
+
+        self._lutris_game_index = index
+        return index
 
     def _load_wine_registry_section(self, registry_path: Path) -> tuple[list[str], dict[str, RegistryValue]]:
         lines = registry_path.read_text(encoding="utf-8", errors="ignore").splitlines()

@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
+import subprocess
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon, QPainter, QPixmap
+
+from app.services.lutris_runtime import build_lutris_environment
 
 try:
     import pefile
@@ -18,6 +22,7 @@ RT_GROUP_ICON = 14
 class ExeIconService:
     def __init__(self) -> None:
         self._cache: dict[tuple[str, int, int], QIcon] = {}
+        self._lutris_slug_cache: dict[str, str] | None = None
 
     def icon_for_executable(self, exe_path: Path, size: int = 48) -> QIcon | None:
         if not exe_path.exists():
@@ -50,24 +55,125 @@ class ExeIconService:
         if cached is not None:
             return cached
 
+        for candidate_slug in self._lutris_identifier_candidates(normalized):
+            icon = self._icon_for_lutris_identifier(candidate_slug)
+            if icon is None or icon.isNull():
+                continue
+            self._cache[cache_key] = icon
+            return icon
+        return None
+
+    def _lutris_identifier_candidates(self, target: str) -> list[str]:
+        candidates: list[str] = []
+        seen: set[str] = set()
+
+        def add_candidate(value: str) -> None:
+            normalized_value = str(value or "").strip()
+            if not normalized_value:
+                return
+            key = normalized_value.casefold()
+            if key in seen:
+                return
+            seen.add(key)
+            candidates.append(normalized_value)
+
+        add_candidate(target)
+
+        slug_map = self._load_lutris_slug_cache()
+        resolved_slug = slug_map.get(target.casefold(), "")
+        add_candidate(resolved_slug)
+        return candidates
+
+    def _icon_for_lutris_identifier(self, identifier: str) -> QIcon | None:
         lutris_root = Path.home() / ".local" / "share" / "lutris"
-        candidates = [
-            lutris_root / "coverart" / f"{normalized}.png",
-            lutris_root / "coverart" / f"{normalized}.jpg",
-            lutris_root / "coverart" / f"{normalized}.jpeg",
-            lutris_root / "banners" / f"{normalized}.png",
-            lutris_root / "banners" / f"{normalized}.jpg",
-            lutris_root / "banners" / f"{normalized}.jpeg",
+        image_candidates = [
+            lutris_root / "coverart" / f"{identifier}.png",
+            lutris_root / "coverart" / f"{identifier}.jpg",
+            lutris_root / "coverart" / f"{identifier}.jpeg",
+            lutris_root / "banners" / f"{identifier}.png",
+            lutris_root / "banners" / f"{identifier}.jpg",
+            lutris_root / "banners" / f"{identifier}.jpeg",
         ]
-        for candidate in candidates:
+        for candidate in self._lutris_app_icon_candidates(identifier):
+            if not candidate.exists():
+                continue
+            icon = QIcon(str(candidate))
+            if icon.isNull():
+                continue
+            return icon
+
+        for candidate in image_candidates:
             if not candidate.exists():
                 continue
             icon = self._icon_from_artwork(candidate)
             if icon.isNull():
                 continue
-            self._cache[cache_key] = icon
             return icon
         return None
+
+    def _lutris_app_icon_candidates(self, identifier: str) -> list[Path]:
+        icons_root = Path.home() / ".local" / "share" / "icons" / "hicolor"
+        if not icons_root.exists():
+            return []
+
+        candidates: list[Path] = []
+        for size_dir in sorted(icons_root.glob("*x*"), reverse=True):
+            apps_dir = size_dir / "apps"
+            if not apps_dir.exists():
+                continue
+            for suffix in ("png", "svg", "xpm", "ico"):
+                candidates.append(apps_dir / f"lutris_{identifier}.{suffix}")
+        return candidates
+
+    def _load_lutris_slug_cache(self) -> dict[str, str]:
+        if self._lutris_slug_cache is not None:
+            return self._lutris_slug_cache
+
+        slug_map: dict[str, str] = {}
+        try:
+            completed = subprocess.run(
+                ["lutris", "--list-games", "--json"],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=build_lutris_environment(),
+            )
+        except OSError:
+            self._lutris_slug_cache = slug_map
+            return slug_map
+
+        if completed.returncode != 0 or not completed.stdout.strip():
+            self._lutris_slug_cache = slug_map
+            return slug_map
+
+        try:
+            payload = json.loads(completed.stdout)
+        except json.JSONDecodeError:
+            self._lutris_slug_cache = slug_map
+            return slug_map
+
+        if not isinstance(payload, list):
+            self._lutris_slug_cache = slug_map
+            return slug_map
+
+        for game in payload:
+            if not isinstance(game, dict):
+                continue
+            slug = str(game.get("slug") or "").strip()
+            if not slug:
+                continue
+            slug_map[slug.casefold()] = slug
+
+            game_id = str(game.get("id") or "").strip()
+            if game_id:
+                slug_map[game_id.casefold()] = slug
+
+            name = str(game.get("name") or "").strip()
+            if name:
+                slug_map[name.casefold()] = slug
+
+        self._lutris_slug_cache = slug_map
+        return slug_map
 
     def _extract_icon(self, exe_path: Path) -> QIcon | None:
         fallback_icon = self._load_bottles_cached_icon(exe_path)

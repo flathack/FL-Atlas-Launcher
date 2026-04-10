@@ -498,6 +498,20 @@ class MainWindow(QMainWindow):
             return True
         return super().eventFilter(watched, event)
 
+    def closeEvent(self, event) -> None:
+        from PySide6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        if app is not None:
+            try:
+                app.removeEventFilter(self)
+            except Exception:
+                pass
+        self.sync_timer.stop()
+        self.process_timer.stop()
+        self.cheat_toast_timer.stop()
+        super().closeEvent(event)
+
     def _is_cheat_toggle_event(self, event) -> bool:
         if event.isAutoRepeat():
             return False
@@ -618,10 +632,10 @@ class MainWindow(QMainWindow):
     def _icon_for_installation(self, installation: Installation) -> QIcon:
         exe_path = self.launcher_service.resolve_executable_path(installation)
         base_icon = QIcon()
-        if exe_path.exists():
-            base_icon = self.exe_icon_service.icon_for_executable(exe_path) or QIcon()
-        if base_icon.isNull() and installation.launch_method.strip().lower() == "lutris":
+        if installation.launch_method.strip().lower() == "lutris":
             base_icon = self.exe_icon_service.icon_for_lutris_slug(installation.runner_target) or QIcon()
+        if base_icon.isNull() and exe_path.exists():
+            base_icon = self.exe_icon_service.icon_for_executable(exe_path) or QIcon()
         if base_icon.isNull() and exe_path.exists():
             base_icon = self.icon_provider.icon(QFileInfo(str(exe_path)))
         if base_icon.isNull():
