@@ -32,6 +32,13 @@ def _truncate_table_text(value: object, max_length: int = _MAX_TABLE_TEXT_LENGTH
     return text if len(text) <= max_length else f"{text[:max_length - 1]}…"
 
 
+def _format_seconds(value: int | None) -> str:
+    if value is None:
+        return "-"
+    minutes, seconds = divmod(int(value), 60)
+    return f"{minutes}:{seconds:02d}"
+
+
 class _RoundTripWorker(QObject):
     finished = Signal(list)
     progress = Signal(int)
@@ -268,6 +275,8 @@ class TradeRouteRoundTripDialog(QDialog):
                 cargo=loop.cargo_capacity,
                 jumps=loop.total_jumps,
                 profit=f"{loop.total_profit:,}".replace(",", "."),
+                time=_format_seconds(loop.travel_time_seconds),
+                ppm=(f"{loop.profit_per_minute:,}".replace(",", ".") if loop.profit_per_minute is not None else "-"),
             )
         )
 

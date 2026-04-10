@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import html
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QThread, Qt, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -18,6 +20,7 @@ from PySide6.QtWidgets import (
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
+    QTextBrowser,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -30,6 +33,7 @@ from app.services.ship_render_service import ShipRenderService
 from app.services.trade_route_service import (
     TradeRouteLoopRow,
     TradeRouteRow,
+    TradeRouteTravelSegment,
     TradeRouteService,
 )
 from app.ui.ship_handling_dialog import _IconLoaderWorker
@@ -40,6 +44,7 @@ from app.ui.trade_route_round_trip_detail_dialog import TradeRouteRoundTripDetai
 
 _MAX_TABLE_TEXT_LENGTH = 30
 _MAX_ROUND_TRIP_TEXT_LENGTH = 60
+_SORT_ROLE = int(Qt.ItemDataRole.UserRole) + 1
 
 
 def _truncate_table_text(value: object, max_length: int = _MAX_TABLE_TEXT_LENGTH) -> str:
@@ -52,6 +57,178 @@ def _truncate_round_trip_text(value: object, max_length: int = _MAX_ROUND_TRIP_T
     return text if len(text) <= max_length else f"{text[:max_length - 1]}…"
 
 
+def _format_money(value: int | None) -> str:
+    if value is None:
+        return "-"
+    return f"{value:,}".replace(",", ".") + " $"
+
+
+def _format_seconds(value: int | None) -> str:
+    if value is None:
+        return "-"
+    minutes, seconds = divmod(int(value), 60)
+    return f"{minutes}:{seconds:02d}"
+
+
+def _format_volume(value: float) -> str:
+    rounded = round(float(value), 2)
+    if rounded.is_integer():
+        return str(int(rounded))
+    return f"{rounded:.2f}".rstrip("0").rstrip(".")
+
+
+def _format_segment_text(translator: Translator, segment: TradeRouteTravelSegment) -> str:
+    if segment.segment_type == "buy_start":
+        return f"{segment.system}: {segment.station} -> {translator.text('trade_routes_detail_buy_start')} ({_format_seconds(segment.seconds)})"
+    if segment.segment_type == "dock_sell":
+        return f"{segment.system}: {translator.text('trade_routes_detail_dock_sell')} {segment.station} ({_format_seconds(segment.seconds)})"
+    if segment.segment_type == "jump":
+        return f"{translator.text('trade_routes_detail_jump')}: {segment.from_label} -> {segment.to_label} ({_format_seconds(segment.seconds)})"
+    if segment.segment_type == "trade_lane":
+        suffix = f" | {segment.distance} m" if segment.distance is not None else ""
+        return f"{segment.system}: {translator.text('trade_routes_detail_trade_lane')} ({_format_seconds(segment.seconds)}){suffix}"
+    suffix = f" | {segment.distance} m" if segment.distance is not None else ""
+    return f"{segment.system}: {translator.text('trade_routes_detail_open_space')} ({_format_seconds(segment.seconds)}){suffix}"
+
+
+def _segment_type_label(translator: Translator, segment: TradeRouteTravelSegment) -> str:
+    if segment.segment_type == "buy_start":
+        return translator.text("trade_routes_detail_buy_start")
+    if segment.segment_type == "dock_sell":
+        return translator.text("trade_routes_detail_dock_sell")
+    if segment.segment_type == "jump":
+        return translator.text("trade_routes_detail_jump")
+    if segment.segment_type == "trade_lane":
+        return translator.text("trade_routes_detail_trade_lane")
+    return translator.text("trade_routes_detail_open_space")
+
+
+def _segment_action_label(segment: TradeRouteTravelSegment) -> str:
+    if segment.segment_type == "buy_start":
+        return f"{segment.station}"
+    if segment.segment_type == "dock_sell":
+        return f"{segment.station}"
+    if segment.segment_type == "jump":
+        return f"{segment.from_label} -> {segment.to_label}"
+    if segment.distance is not None:
+        return f"{segment.distance:,}".replace(",", ".") + " m"
+    return "-"
+
+
+def _render_segment_table_html(
+    translator: Translator,
+    title: str,
+    segments: list[TradeRouteTravelSegment],
+) -> str:
+    if not segments:
+        return ""
+    rows: list[str] = []
+    for index, segment in enumerate(segments, start=1):
+        rows.append(
+            "<tr>"
+            f"<td style='padding:6px 8px; color:#9fb2cf;'>{index}</td>"
+            f"<td style='padding:6px 8px; font-weight:600; color:#dce7f7;'>{html.escape(_segment_type_label(translator, segment))}</td>"
+            f"<td style='padding:6px 8px; color:#dce7f7;'>{html.escape(segment.system)}</td>"
+            f"<td style='padding:6px 8px; color:#c7d6ea;'>{html.escape(_segment_action_label(segment))}</td>"
+            f"<td style='padding:6px 8px; text-align:right; color:#8fe1b5; white-space:nowrap;'>{html.escape(_format_seconds(segment.seconds))}</td>"
+            "</tr>"
+        )
+    return (
+        f"<div style='margin-top:14px;'>"
+        f"<div style='font-size:12px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#8db7ff; margin-bottom:6px;'>{html.escape(title)}</div>"
+        "<table cellspacing='0' cellpadding='0' width='100%' style='border-collapse:collapse; background:#334766; border:1px solid #4a5f82; border-radius:8px;'>"
+        "<thead>"
+        "<tr>"
+        f"<th align='left' style='padding:7px 8px; color:#9fb2cf; font-size:11px;'>{html.escape(translator.text('trade_routes_detail_step'))}</th>"
+        f"<th align='left' style='padding:7px 8px; color:#9fb2cf; font-size:11px;'>{html.escape(translator.text('trade_routes_detail_type'))}</th>"
+        f"<th align='left' style='padding:7px 8px; color:#9fb2cf; font-size:11px;'>{html.escape(translator.text('trade_routes_detail_system'))}</th>"
+        f"<th align='left' style='padding:7px 8px; color:#9fb2cf; font-size:11px;'>{html.escape(translator.text('trade_routes_detail_action'))}</th>"
+        f"<th align='right' style='padding:7px 8px; color:#9fb2cf; font-size:11px;'>{html.escape(translator.text('trade_routes_detail_segment_time'))}</th>"
+        "</tr>"
+        "</thead>"
+        "<tbody>"
+        + "".join(rows) +
+        "</tbody></table></div>"
+    )
+
+
+def _format_route_details(
+    translator: Translator,
+    route: TradeRouteRow,
+    outbound_segments: list[TradeRouteTravelSegment],
+    return_segments: list[TradeRouteTravelSegment] | None,
+) -> str:
+    route_text = " -> ".join(route.path) if route.path else "-"
+    profit_per_minute = f"{route.profit_per_minute:,}".replace(",", ".") if route.profit_per_minute is not None else "-"
+    summary_cards = [
+        (translator.text("trade_routes_column_time"), _format_seconds(route.travel_time_seconds), "#8fe1b5"),
+        (translator.text("trade_routes_column_ppm"), profit_per_minute, "#ffd47a"),
+        (translator.text("trade_routes_column_total_profit"), _format_money(route.total_profit), "#9fd0ff"),
+    ]
+    if route.return_travel_time_seconds > 0:
+        summary_cards.append((translator.text("trade_routes_detail_return"), _format_seconds(route.return_travel_time_seconds), "#f8c78e"))
+
+    card_html = "".join(
+        "<td style='padding:0 10px 0 0;'>"
+        "<div style='min-width:130px; background:#334766; border:1px solid #4a5f82; border-radius:8px; padding:10px 12px;'>"
+        f"<div style='font-size:11px; text-transform:uppercase; letter-spacing:0.08em; color:#9fb2cf; margin-bottom:4px;'>{html.escape(label)}</div>"
+        f"<div style='font-size:18px; font-weight:700; color:{color};'>{html.escape(value)}</div>"
+        "</div></td>"
+        for label, value, color in summary_cards
+    )
+
+    route_chip = (
+        "<div style='background:#334766; border:1px solid #4a5f82; border-radius:10px; padding:12px 14px; margin-bottom:12px;'>"
+        f"<div style='font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:#9fb2cf; margin-bottom:6px;'>{html.escape(translator.text('trade_routes_detail_route_label'))}</div>"
+        f"<div style='font-size:19px; font-weight:700; color:#eef4ff; line-height:1.35;'>{html.escape(route_text)}</div>"
+        "</div>"
+    )
+
+    return (
+        "<html><body style='font-family:Segoe UI; color:#dce7f7; margin:0;'>"
+        + route_chip +
+        f"<table cellspacing='0' cellpadding='0' style='margin-bottom:8px;'><tr>{card_html}</tr></table>"
+        + _render_segment_table_html(translator, translator.text('trade_routes_detail_outbound'), outbound_segments)
+        + _render_segment_table_html(translator, translator.text('trade_routes_detail_return_segments'), return_segments or [])
+        + "</body></html>"
+    )
+
+
+class _SortableTableWidgetItem(QTableWidgetItem):
+    def __lt__(self, other: object) -> bool:
+        if not isinstance(other, QTableWidgetItem):
+            return super().__lt__(other)
+        self_value = self.data(_SORT_ROLE)
+        other_value = other.data(_SORT_ROLE)
+        if self_value is None and other_value is None:
+            return self.text().lower() < other.text().lower()
+        if self_value is None:
+            return False
+        if other_value is None:
+            return True
+        try:
+            return self_value < other_value
+        except TypeError:
+            return str(self_value).lower() < str(other_value).lower()
+
+
+def _make_sortable_item(
+    display_text: str,
+    *,
+    payload: object | None = None,
+    sort_value: object | None = None,
+    align_right: bool = False,
+) -> QTableWidgetItem:
+    item = _SortableTableWidgetItem(_truncate_round_trip_text(display_text, _MAX_ROUND_TRIP_TEXT_LENGTH))
+    item.setToolTip(display_text)
+    if align_right:
+        item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+    if payload is not None:
+        item.setData(Qt.ItemDataRole.UserRole, payload)
+    item.setData(_SORT_ROLE, sort_value if sort_value is not None else display_text.lower())
+    return item
+
+
 # ---------------------------------------------------------------------------
 #  Workers
 # ---------------------------------------------------------------------------
@@ -61,17 +238,19 @@ class _InnerSystemWorker(QObject):
     progress = Signal(int)
 
     def __init__(self, service: TradeRouteService, installation: Installation,
-                 cargo_capacity: int, player_reputation: dict[str, float]) -> None:
+                 cargo_capacity: int, include_return_trip: bool, player_reputation: dict[str, float]) -> None:
         super().__init__()
         self._service = service
         self._installation = installation
         self._cargo_capacity = cargo_capacity
+        self._include_return_trip = include_return_trip
         self._player_reputation = player_reputation
 
     def run(self) -> None:
         routes = self._service.best_inner_system_routes(
             self._installation,
             cargo_capacity=self._cargo_capacity,
+            include_return_trip=self._include_return_trip,
             player_reputation=self._player_reputation,
             progress_callback=self.progress.emit,
         )
@@ -83,12 +262,13 @@ class _TradeRouteWorker(QObject):
     progress = Signal(int)
 
     def __init__(self, service: TradeRouteService, installation: Installation,
-                 cargo_capacity: int, max_jumps: int, player_reputation: dict[str, float]) -> None:
+                 cargo_capacity: int, max_jumps: int, include_return_trip: bool, player_reputation: dict[str, float]) -> None:
         super().__init__()
         self._service = service
         self._installation = installation
         self._cargo_capacity = cargo_capacity
         self._max_jumps = max_jumps
+        self._include_return_trip = include_return_trip
         self._player_reputation = player_reputation
 
     def run(self) -> None:
@@ -96,6 +276,7 @@ class _TradeRouteWorker(QObject):
             self._installation,
             cargo_capacity=self._cargo_capacity,
             max_jumps=self._max_jumps,
+            include_return_trip=self._include_return_trip,
             player_reputation=self._player_reputation,
             progress_callback=self.progress.emit,
         )
@@ -214,9 +395,10 @@ class _InnerSystemTab(QWidget, _LoadingMixin):
         self.ship_info_button = QToolButton()
         self.ship_info_button.setText("🔍")
         self.ship_info_button.setToolTip(self.tr("ship_preview_button_tooltip"))
+        self.return_trip_checkbox = QCheckBox(self.tr("trade_routes_include_return"))
         self.refresh_button = QPushButton(self.tr("refresh"))
 
-        self.table = QTableWidget(0, 8)
+        self.table = QTableWidget(0, 14)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
@@ -226,14 +408,27 @@ class _InnerSystemTab(QWidget, _LoadingMixin):
             self.tr("trade_routes_column_buy"),
             self.tr("trade_routes_column_sell"),
             self.tr("trade_routes_column_commodity"),
+            self.tr("trade_routes_column_buy_price"),
+            self.tr("trade_routes_column_sell_price"),
+            self.tr("trade_routes_column_volume"),
+            self.tr("trade_routes_column_units"),
+            self.tr("trade_routes_column_jumps"),
             self.tr("trade_routes_column_unit_profit"),
-            self.tr("trade_routes_column_cargo"),
             self.tr("trade_routes_column_total_profit"),
+            self.tr("trade_routes_column_time"),
+            self.tr("trade_routes_column_ppm"),
         ])
         self.table.horizontalHeader().setStretchLastSection(True)
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText(self.tr("trade_routes_search"))
         self.search_input.setClearButtonEnabled(True)
+        self.details_label = QTextBrowser()
+        self.details_label.setOpenExternalLinks(False)
+        self.details_label.setReadOnly(True)
+        self.details_label.setMinimumHeight(240)
+        self.details_label.setStyleSheet(
+            "QTextBrowser { background-color: #3c4f71; border: 1px solid #4a5f82; border-radius: 10px; padding: 8px; }"
+        )
 
         self._init_loading_widgets(translator)
         self._started = False
@@ -258,6 +453,7 @@ class _InnerSystemTab(QWidget, _LoadingMixin):
         ship_row.addWidget(self.ship_combo, 1)
         ship_row.addWidget(self.ship_info_button)
         form.addRow(self.tr("trade_routes_ship"), ship_row)
+        form.addRow("", self.return_trip_checkbox)
 
         controls = QHBoxLayout()
         controls.addWidget(filters, 1)
@@ -273,11 +469,14 @@ class _InnerSystemTab(QWidget, _LoadingMixin):
         root.addWidget(self.loading_label)
         root.addLayout(loading_row)
         root.addWidget(self.table, 1)
+        root.addWidget(self.details_label)
 
     def _connect_signals(self) -> None:
         self.refresh_button.clicked.connect(self._refresh_routes)
         self.ship_combo.currentIndexChanged.connect(lambda _: self._on_ship_combo_changed())
         self.ship_info_button.clicked.connect(self._open_ship_preview)
+        self.return_trip_checkbox.toggled.connect(lambda _: self._refresh_routes())
+        self.table.currentCellChanged.connect(self._update_details_label)
         self.search_input.textChanged.connect(self._apply_filter)
 
     def _load_ships(self) -> None:
@@ -353,7 +552,7 @@ class _InnerSystemTab(QWidget, _LoadingMixin):
         self._set_loading(True)
         self._worker_thread = QThread(self)
         worker = _InnerSystemWorker(self.trade_route_service, self.installation,
-                                    cargo_capacity, self.player_reputation)
+                                    cargo_capacity, self.return_trip_checkbox.isChecked(), self.player_reputation)
         worker.moveToThread(self._worker_thread)
         self._worker_thread.started.connect(worker.run)
         worker.progress.connect(self.progress_bar.setValue)
@@ -374,6 +573,7 @@ class _InnerSystemTab(QWidget, _LoadingMixin):
 
     def _on_routes_ready(self, routes: list[TradeRouteRow]) -> None:
         self._routes = routes
+        self.table.setSortingEnabled(False)
         self.table.setRowCount(len(self._routes))
         eye_icon = _build_eye_icon()
         for row_index, route in enumerate(self._routes):
@@ -383,22 +583,67 @@ class _InnerSystemTab(QWidget, _LoadingMixin):
             button.clicked.connect(lambda _c=False, r=route: self._open_preview(r))
             self.table.setCellWidget(row_index, 0, button)
             values = [
-                route.source_system, route.buy_base, route.sell_base, route.commodity,
-                f"{route.profit_per_unit:,}".replace(",", ".") + " $",
-                f"{route.cargo_capacity:,}".replace(",", "."),
-                f"{route.total_profit:,}".replace(",", ".") + " $",
+                route.source_system,
+                route.buy_base,
+                route.sell_base,
+                route.commodity,
+                _format_money(route.buy_price),
+                _format_money(route.sell_price),
+                _format_volume(route.commodity_volume),
+                f"{route.cargo_units:,}".replace(",", "."),
+                str(route.jumps),
+                _format_money(route.profit_per_unit),
+                _format_money(route.total_profit),
+                _format_seconds(route.travel_time_seconds),
+                f"{route.profit_per_minute:,}".replace(",", ".") if route.profit_per_minute is not None else "-",
             ]
-            for offset, value in enumerate(values, start=1):
+            sort_values = [
+                route.source_system.lower(),
+                route.buy_base.lower(),
+                route.sell_base.lower(),
+                route.commodity.lower(),
+                route.buy_price,
+                route.sell_price,
+                route.commodity_volume,
+                route.cargo_units,
+                route.jumps,
+                route.profit_per_unit,
+                route.total_profit,
+                route.travel_time_seconds if route.travel_time_seconds is not None else float("inf"),
+                route.profit_per_minute if route.profit_per_minute is not None else -1,
+            ]
+            for offset, (value, sort_value) in enumerate(zip(values, sort_values), start=1):
                 full_text = str(value)
-                item = QTableWidgetItem(_truncate_table_text(full_text))
+                item = _SortableTableWidgetItem(_truncate_table_text(full_text))
                 item.setToolTip(full_text)
-                if offset in {5, 6, 7}:
+                if offset in {5, 6, 7, 8, 9, 10, 11, 12, 13}:
                     item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 item.setData(Qt.ItemDataRole.UserRole, route)
+                item.setData(_SORT_ROLE, sort_value)
                 self.table.setItem(row_index, offset, item)
         self.table.resizeColumnsToContents()
+        self.table.setSortingEnabled(True)
+        self.table.sortByColumn(13, Qt.SortOrder.DescendingOrder)
         self._set_loading(False)
         self._apply_filter()
+        self._update_details_label()
+
+    def _update_details_label(self, *_args: object) -> None:
+        current_row = self.table.currentRow()
+        if current_row < 0:
+            if self.table.rowCount() > 0:
+                self.table.selectRow(0)
+                current_row = 0
+            else:
+                self.details_label.setText(self.tr("trade_routes_no_routes"))
+                return
+        item = self.table.item(current_row, 1)
+        route = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+        if not isinstance(route, TradeRouteRow):
+            self.details_label.setText(self.tr("trade_routes_no_routes"))
+            return
+        outbound_segments, return_segments = self.trade_route_service.build_route_travel_breakdown(self.installation, route)
+        self.details_label.setText(_format_route_details(self.translator, route, outbound_segments, return_segments))
 
     def _apply_filter(self) -> None:
         text = self.search_input.text().strip().lower()
@@ -462,9 +707,10 @@ class _TradeRoutesTab(QWidget, _LoadingMixin):
         self.jump_spin = QSpinBox()
         self.jump_spin.setRange(0, 20)
         self.jump_spin.setValue(3)
+        self.return_trip_checkbox = QCheckBox(self.tr("trade_routes_include_return"))
         self.refresh_button = QPushButton(self.tr("refresh"))
 
-        self.table = QTableWidget(0, 9)
+        self.table = QTableWidget(0, 14)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
@@ -474,17 +720,27 @@ class _TradeRoutesTab(QWidget, _LoadingMixin):
             self.tr("trade_routes_column_buy"),
             self.tr("trade_routes_column_sell"),
             self.tr("trade_routes_column_commodity"),
+            self.tr("trade_routes_column_buy_price"),
+            self.tr("trade_routes_column_sell_price"),
+            self.tr("trade_routes_column_volume"),
+            self.tr("trade_routes_column_units"),
             self.tr("trade_routes_column_jumps"),
             self.tr("trade_routes_column_unit_profit"),
-            self.tr("trade_routes_column_cargo"),
             self.tr("trade_routes_column_total_profit"),
+            self.tr("trade_routes_column_time"),
+            self.tr("trade_routes_column_ppm"),
         ])
         self.table.horizontalHeader().setStretchLastSection(True)
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText(self.tr("trade_routes_search"))
         self.search_input.setClearButtonEnabled(True)
-        self.path_label = QLabel()
-        self.path_label.setWordWrap(True)
+        self.path_label = QTextBrowser()
+        self.path_label.setOpenExternalLinks(False)
+        self.path_label.setReadOnly(True)
+        self.path_label.setMinimumHeight(240)
+        self.path_label.setStyleSheet(
+            "QTextBrowser { background-color: #3c4f71; border: 1px solid #4a5f82; border-radius: 10px; padding: 8px; }"
+        )
 
         self._init_loading_widgets(translator)
         self._started = False
@@ -510,6 +766,7 @@ class _TradeRoutesTab(QWidget, _LoadingMixin):
         ship_row.addWidget(self.ship_info_button)
         form.addRow(self.tr("trade_routes_ship"), ship_row)
         form.addRow(self.tr("trade_routes_max_jumps"), self.jump_spin)
+        form.addRow("", self.return_trip_checkbox)
 
         controls = QHBoxLayout()
         controls.addWidget(filters, 1)
@@ -532,6 +789,7 @@ class _TradeRoutesTab(QWidget, _LoadingMixin):
         self.ship_combo.currentIndexChanged.connect(lambda _: self._on_ship_combo_changed())
         self.ship_info_button.clicked.connect(self._open_ship_preview)
         self.jump_spin.valueChanged.connect(lambda _: self._refresh_routes())
+        self.return_trip_checkbox.toggled.connect(lambda _: self._refresh_routes())
         self.table.currentCellChanged.connect(self._update_path_label)
         self.search_input.textChanged.connect(self._apply_filter)
 
@@ -609,7 +867,7 @@ class _TradeRoutesTab(QWidget, _LoadingMixin):
         self._set_loading(True)
         self._worker_thread = QThread(self)
         worker = _TradeRouteWorker(self.trade_route_service, self.installation,
-                                   cargo_capacity, max_jumps, self.player_reputation)
+                                   cargo_capacity, max_jumps, self.return_trip_checkbox.isChecked(), self.player_reputation)
         worker.moveToThread(self._worker_thread)
         self._worker_thread.started.connect(worker.run)
         worker.progress.connect(self.progress_bar.setValue)
@@ -631,6 +889,7 @@ class _TradeRoutesTab(QWidget, _LoadingMixin):
 
     def _on_routes_ready(self, routes: list[TradeRouteRow]) -> None:
         self._routes = routes
+        self.table.setSortingEnabled(False)
         self.table.setRowCount(len(self._routes))
         eye_icon = _build_eye_icon()
         for row_index, route in enumerate(self._routes):
@@ -640,22 +899,47 @@ class _TradeRoutesTab(QWidget, _LoadingMixin):
             button.clicked.connect(lambda _c=False, r=route: self._open_preview(r))
             self.table.setCellWidget(row_index, 0, button)
             values = [
-                route.source_system, route.buy_base,
+                route.source_system,
+                route.buy_base,
                 f"{route.target_system} -> {route.sell_base}",
-                route.commodity, str(route.jumps),
-                f"{route.profit_per_unit:,}".replace(",", ".") + " $",
-                f"{route.cargo_capacity:,}".replace(",", "."),
-                f"{route.total_profit:,}".replace(",", ".") + " $",
+                route.commodity,
+                _format_money(route.buy_price),
+                _format_money(route.sell_price),
+                _format_volume(route.commodity_volume),
+                f"{route.cargo_units:,}".replace(",", "."),
+                str(route.jumps),
+                _format_money(route.profit_per_unit),
+                _format_money(route.total_profit),
+                _format_seconds(route.travel_time_seconds),
+                f"{route.profit_per_minute:,}".replace(",", ".") if route.profit_per_minute is not None else "-",
             ]
-            for offset, value in enumerate(values, start=1):
+            sort_values = [
+                route.source_system.lower(),
+                route.buy_base.lower(),
+                f"{route.target_system} -> {route.sell_base}".lower(),
+                route.commodity.lower(),
+                route.buy_price,
+                route.sell_price,
+                route.commodity_volume,
+                route.cargo_units,
+                route.jumps,
+                route.profit_per_unit,
+                route.total_profit,
+                route.travel_time_seconds if route.travel_time_seconds is not None else float("inf"),
+                route.profit_per_minute if route.profit_per_minute is not None else -1,
+            ]
+            for offset, (value, sort_value) in enumerate(zip(values, sort_values), start=1):
                 full_text = str(value)
-                item = QTableWidgetItem(_truncate_table_text(full_text))
+                item = _SortableTableWidgetItem(_truncate_table_text(full_text))
                 item.setToolTip(full_text)
-                if offset in {5, 6, 7, 8}:
+                if offset in {5, 6, 7, 8, 9, 10, 11, 12, 13}:
                     item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 item.setData(Qt.ItemDataRole.UserRole, route)
+                item.setData(_SORT_ROLE, sort_value)
                 self.table.setItem(row_index, offset, item)
         self.table.resizeColumnsToContents()
+        self.table.setSortingEnabled(True)
+        self.table.sortByColumn(13, Qt.SortOrder.DescendingOrder)
         self._set_loading(False)
         self._apply_filter()
         self._update_path_label()
@@ -674,7 +958,8 @@ class _TradeRoutesTab(QWidget, _LoadingMixin):
         if not isinstance(route, TradeRouteRow) or not route.path:
             self.path_label.setText(self.tr("trade_routes_path", path="-"))
             return
-        self.path_label.setText(self.tr("trade_routes_path", path=" -> ".join(route.path)))
+        outbound_segments, return_segments = self.trade_route_service.build_route_travel_breakdown(self.installation, route)
+        self.path_label.setText(_format_route_details(self.translator, route, outbound_segments, return_segments))
 
     def _apply_filter(self) -> None:
         text = self.search_input.text().strip().lower()
@@ -743,7 +1028,7 @@ class _RoundTripTab(QWidget, _LoadingMixin):
         self.leg_spin.setValue(4)
         self.refresh_button = QPushButton(self.tr("refresh"))
 
-        self.table = QTableWidget(0, 5)
+        self.table = QTableWidget(0, 7)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
@@ -753,6 +1038,8 @@ class _RoundTripTab(QWidget, _LoadingMixin):
             self.tr("trade_round_trip_column_goods"),
             self.tr("trade_round_trip_column_jumps"),
             self.tr("trade_round_trip_column_profit"),
+            self.tr("trade_round_trip_column_time"),
+            self.tr("trade_round_trip_column_ppm"),
         ])
         self.table.horizontalHeader().setStretchLastSection(True)
         self.search_input = QLineEdit()
@@ -914,23 +1201,39 @@ class _RoundTripTab(QWidget, _LoadingMixin):
 
     def _on_loops_ready(self, loops: list[TradeRouteLoopRow]) -> None:
         self._loops = loops
+        self.table.setSortingEnabled(False)
         self.table.setRowCount(len(self._loops))
         for row_index, loop in enumerate(self._loops):
             values = [
-                loop.start_system, loop.route_text,
+                loop.start_system,
+                loop.route_text,
                 " | ".join(loop.commodities),
                 str(loop.total_jumps),
-                f"{loop.total_profit:,}".replace(",", ".") + " $",
+                _format_money(loop.total_profit),
+                _format_seconds(loop.travel_time_seconds),
+                f"{loop.profit_per_minute:,}".replace(",", ".") if loop.profit_per_minute is not None else "-",
             ]
-            for column, value in enumerate(values):
+            sort_values = [
+                loop.start_system.lower(),
+                loop.route_text.lower(),
+                " | ".join(loop.commodities).lower(),
+                loop.total_jumps,
+                loop.total_profit,
+                loop.travel_time_seconds if loop.travel_time_seconds is not None else float("inf"),
+                loop.profit_per_minute if loop.profit_per_minute is not None else -1,
+            ]
+            for column, (value, sort_value) in enumerate(zip(values, sort_values)):
                 full_text = str(value)
-                item = QTableWidgetItem(_truncate_round_trip_text(full_text))
+                item = _SortableTableWidgetItem(_truncate_round_trip_text(full_text))
                 item.setToolTip(full_text)
-                if column in {3, 4}:
+                if column in {3, 4, 5, 6}:
                     item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 item.setData(Qt.ItemDataRole.UserRole, loop)
+                item.setData(_SORT_ROLE, sort_value)
                 self.table.setItem(row_index, column, item)
         self.table.resizeColumnsToContents()
+        self.table.setSortingEnabled(True)
+        self.table.sortByColumn(6, Qt.SortOrder.DescendingOrder)
         self._set_loading(False)
         self._apply_filter()
         self._update_summary()
@@ -954,6 +1257,8 @@ class _RoundTripTab(QWidget, _LoadingMixin):
             legs=len(loop.legs), cargo=loop.cargo_capacity,
             jumps=loop.total_jumps,
             profit=f"{loop.total_profit:,}".replace(",", "."),
+            time=_format_seconds(loop.travel_time_seconds),
+            ppm=(f"{loop.profit_per_minute:,}".replace(",", ".") if loop.profit_per_minute is not None else "-"),
         ))
 
     def _apply_filter(self) -> None:

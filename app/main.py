@@ -23,7 +23,7 @@ else:
     from .services.update_service import UpdateService
     from .ui.main_window import MainWindow
 
-APP_VERSION = "v0.4.1"
+APP_VERSION = "v0.4.3"
 
 
 def _write_startup_log(error_text: str) -> Path:

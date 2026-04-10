@@ -45,6 +45,7 @@ class TextDocument:
 class ShipHandlingProfile:
     nickname: str
     display_name: str
+    ship_type: str = ""
 
 
 @dataclass(slots=True)
@@ -321,6 +322,7 @@ class CheatService:
             ShipHandlingProfile(
                 nickname=block["nickname"],
                 display_name=display_names.get(str(block["nickname"]), str(block["nickname"])),
+                ship_type=str(block.get("type", "")),
             )
             for block in blocks
         ]
@@ -462,11 +464,28 @@ class CheatService:
     def reset_ship_handling(self, installation: Installation) -> bool:
         return self._restore_backup(installation, "ship_handling")
 
+    def apply_full_path(self, installation: Installation) -> bool:
+        game_root = self.resolve_game_root(installation)
+        universe_dir = game_root / "DATA" / "UNIVERSE"
+        legal_path = universe_dir / "shortest_legal_path.ini"
+        all_path = universe_dir / "systems_shortest_path.ini"
+        if not all_path.exists():
+            raise FileNotFoundError("systems_shortest_path.ini not found.")
+        if not legal_path.exists():
+            raise FileNotFoundError("shortest_legal_path.ini not found.")
+        self._backup_files(installation, "full_path", [legal_path])
+        self._ensure_writable(legal_path)
+        shutil.copy2(all_path, legal_path)
+        return True
+
+    def reset_full_path(self, installation: Installation) -> bool:
+        return self._restore_backup(installation, "full_path")
+
     def has_backup(self, installation: Installation, mod_name: str) -> bool:
         return self._backup_root(installation, mod_name).exists()
 
     def reset_all_mods(self, installation: Installation) -> int:
-        mod_names = ("cruise_charge", "cruise_disrupt", "jump_timing", "reveal_everything", "ship_handling", "npc_rumors", "hudshift")
+        mod_names = ("cruise_charge", "cruise_disrupt", "jump_timing", "reveal_everything", "ship_handling", "hudshift", "full_path")
         restored = 0
         for mod_name in mod_names:
             if self._restore_backup(installation, mod_name):
@@ -492,7 +511,6 @@ class CheatService:
         added_files = [
             game_root / "EXE" / "HudShift.dll",
             game_root / "DATA" / "INTERFACE" / "HudShift.ini",
-            game_root / "EXE" / "FLAtlasRumors.dll",
         ]
         for path in added_files:
             if path.exists():
@@ -862,6 +880,9 @@ class CheatService:
             target.parent.mkdir(parents=True, exist_ok=True)
             self._ensure_writable(target)
             shutil.copy2(path, target)
+        for path in backup_root.rglob("*"):
+            if path.is_file():
+                self._ensure_writable(path)
         shutil.rmtree(backup_root, ignore_errors=True)
         return True
 
@@ -1034,6 +1055,8 @@ class CheatService:
                     block["nickname"] = value
                 elif key == "ids_name":
                     block["ids_name"] = value
+                elif key == "type":
+                    block["type"] = value
                 elif key in SHIP_HANDLING_KEYS:
                     block[key] = value
                     block[f"{key}_index"] = line_index

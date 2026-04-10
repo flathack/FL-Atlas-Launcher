@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import os
 import re
 import shutil
+import stat
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -125,11 +127,16 @@ class HudShiftService:
         if files_to_backup:
             self._cheat_service._backup_files(installation, "hudshift", files_to_backup)
 
+    def _ensure_writable(self, path: Path) -> None:
+        if path.exists() and not os.access(path, os.W_OK):
+            path.chmod(path.stat().st_mode | stat.S_IWRITE)
+
     def remove(self, installation: Installation) -> None:
         game_root = self.resolve_game_root(installation)
         self._unregister_from_dacom(game_root)
         hudshift_ini = game_root / "DATA" / "INTERFACE" / "HudShift.ini"
         if hudshift_ini.exists():
+            self._ensure_writable(hudshift_ini)
             hudshift_ini.unlink()
 
     # ------------------------------------------------------------------
@@ -141,6 +148,7 @@ class HudShiftService:
             raise FileNotFoundError("HudShift.dll resource not found in launcher.")
         if target.exists() and target.stat().st_size == source.stat().st_size:
             return
+        self._ensure_writable(target)
         shutil.copy2(source, target)
 
     def _read_ini_text(self, path: Path) -> str:
@@ -174,6 +182,7 @@ class HudShiftService:
                     insert_index = i + 1
         if insert_index is not None:
             lines.insert(insert_index, f"HudShift.dll{newline}")
+            self._ensure_writable(dacom_path)
             dacom_path.write_text("".join(lines), encoding="utf-8", newline="")
 
     def _unregister_from_dacom(self, game_root: Path) -> None:
@@ -188,6 +197,7 @@ class HudShiftService:
             flags=re.MULTILINE | re.IGNORECASE,
         )
         if new_text != text:
+            self._ensure_writable(dacom_path)
             dacom_path.write_text(new_text, encoding="utf-8", newline="")
 
     def _update_cameras(self, game_root: Path, aspect_ratio: str) -> None:
@@ -211,6 +221,7 @@ class HudShiftService:
                 ending = "\r\n" if line.endswith("\r\n") else ("\n" if line.endswith("\n") else "")
                 line = f"{indent}fovx = {fov}{ending}"
             result.append(line)
+        self._ensure_writable(cameras_path)
         cameras_path.write_text("".join(result), encoding="utf-8", newline="")
 
     def _create_hudshift_ini(self, game_root: Path) -> None:
@@ -219,6 +230,8 @@ class HudShiftService:
         hudshift_ini = interface_dir / "HudShift.ini"
         source = resource_path("resources", "hudshift", "HudShift.ini")
         if source.exists():
+            self._ensure_writable(hudshift_ini)
             shutil.copy2(source, hudshift_ini)
         else:
+            self._ensure_writable(hudshift_ini)
             hudshift_ini.write_text("[HUDShift]\nHorizontal = auto\n", encoding="utf-8")

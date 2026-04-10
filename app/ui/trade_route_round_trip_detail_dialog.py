@@ -30,6 +30,26 @@ def _truncate_table_text(value: object, max_length: int = _MAX_TABLE_TEXT_LENGTH
     return text if len(text) <= max_length else f"{text[:max_length - 1]}…"
 
 
+def _format_money(value: int | None) -> str:
+    if value is None:
+        return "-"
+    return f"{value:,}".replace(",", ".") + " $"
+
+
+def _format_seconds(value: int | None) -> str:
+    if value is None:
+        return "-"
+    minutes, seconds = divmod(int(value), 60)
+    return f"{minutes}:{seconds:02d}"
+
+
+def _format_volume(value: float) -> str:
+    rounded = round(float(value), 2)
+    if rounded.is_integer():
+        return str(int(rounded))
+    return f"{rounded:.2f}".rstrip("0").rstrip(".")
+
+
 class TradeRouteRoundTripDetailDialog(QDialog):
     def __init__(
         self,
@@ -52,7 +72,7 @@ class TradeRouteRoundTripDetailDialog(QDialog):
         self.summary_label = QLabel()
         self.summary_label.setWordWrap(True)
 
-        self.leg_table = QTableWidget(0, 8)
+        self.leg_table = QTableWidget(0, 11)
         self.leg_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.leg_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.leg_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
@@ -64,7 +84,10 @@ class TradeRouteRoundTripDetailDialog(QDialog):
                 self.tr("trade_round_trip_detail_column_sell_at"),
                 self.tr("trade_round_trip_detail_column_buy_price"),
                 self.tr("trade_round_trip_detail_column_sell_price"),
+                self.tr("trade_round_trip_detail_column_volume"),
+                self.tr("trade_round_trip_detail_column_units"),
                 self.tr("trade_round_trip_detail_column_jumps"),
+                self.tr("trade_round_trip_detail_column_time"),
                 self.tr("trade_round_trip_detail_column_profit"),
             ]
         )
@@ -135,16 +158,19 @@ class TradeRouteRoundTripDetailDialog(QDialog):
                 leg.commodity,
                 f"{leg.source_system} -> {leg.buy_base}",
                 f"{leg.target_system} -> {leg.sell_base}",
-                f"{leg.buy_price:,}".replace(",", ".") + " $",
-                f"{leg.sell_price:,}".replace(",", ".") + " $",
+                _format_money(leg.buy_price),
+                _format_money(leg.sell_price),
+                _format_volume(leg.commodity_volume),
+                f"{leg.cargo_units:,}".replace(",", "."),
                 str(leg.jumps),
-                f"{leg.total_profit:,}".replace(",", ".") + " $",
+                _format_seconds(leg.travel_time_seconds),
+                _format_money(leg.total_profit),
             ]
             for column, value in enumerate(values):
                 full_text = str(value)
                 item = QTableWidgetItem(_truncate_table_text(full_text))
                 item.setToolTip(full_text)
-                if column in {4, 5, 6, 7}:
+                if column in {4, 5, 6, 7, 8, 9, 10}:
                     item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 item.setData(Qt.ItemDataRole.UserRole, leg)
                 self.leg_table.setItem(row_index, column, item)
@@ -161,6 +187,8 @@ class TradeRouteRoundTripDetailDialog(QDialog):
                 cargo=self.loop.cargo_capacity,
                 jumps=self.loop.total_jumps,
                 profit=f"{self.loop.total_profit:,}".replace(",", "."),
+                time=_format_seconds(self.loop.travel_time_seconds),
+                ppm=(f"{self.loop.profit_per_minute:,}".replace(",", ".") if self.loop.profit_per_minute is not None else "-"),
             )
         )
 
@@ -177,8 +205,25 @@ class TradeRouteRoundTripDetailDialog(QDialog):
 
         self.buy_value.setText(self.tr("trade_round_trip_detail_buy_value", system=leg.source_system, base=leg.buy_base, price=f"{leg.buy_price:,}".replace(",", ".")))
         self.sell_value.setText(self.tr("trade_round_trip_detail_sell_value", system=leg.target_system, base=leg.sell_base, price=f"{leg.sell_price:,}".replace(",", ".")))
-        self.commodity_value.setText(self.tr("trade_round_trip_detail_commodity_value", commodity=leg.commodity, unit=f"{leg.profit_per_unit:,}".replace(",", "."), total=f"{leg.total_profit:,}".replace(",", ".")))
-        self.jumps_value.setText(self.tr("trade_round_trip_detail_jumps_value", jumps=leg.jumps, cargo=leg.cargo_capacity))
+        self.commodity_value.setText(
+            self.tr(
+                "trade_round_trip_detail_commodity_value",
+                commodity=leg.commodity,
+                unit=f"{leg.profit_per_unit:,}".replace(",", "."),
+                total=f"{leg.total_profit:,}".replace(",", "."),
+                volume=_format_volume(leg.commodity_volume),
+                units=f"{leg.cargo_units:,}".replace(",", "."),
+            )
+        )
+        self.jumps_value.setText(
+            self.tr(
+                "trade_round_trip_detail_jumps_value",
+                jumps=leg.jumps,
+                cargo=leg.cargo_capacity,
+                time=_format_seconds(leg.travel_time_seconds),
+                ppm=(f"{leg.profit_per_minute:,}".replace(",", ".") if leg.profit_per_minute is not None else "-"),
+            )
+        )
         self.path_value.setText(self.tr("trade_round_trip_detail_path_value", path=" -> ".join(leg.path) if leg.path else leg.source_system))
 
         try:

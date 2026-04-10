@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
+import math
 from pathlib import Path
 
 from app.models.installation import Installation
@@ -39,6 +40,8 @@ class TradeRouteRow:
     sell_base_nickname: str
     sell_base: str
     commodity: str
+    commodity_volume: float
+    cargo_units: int
     buy_price: int
     sell_price: int
     profit_per_unit: int
@@ -47,6 +50,22 @@ class TradeRouteRow:
     jumps: int
     path: list[str]
     path_nicknames: list[str]
+    travel_time_seconds: int | None = None
+    one_way_travel_time_seconds: int | None = None
+    return_travel_time_seconds: int = 0
+    profit_per_minute: int | None = None
+
+
+@dataclass(slots=True)
+class TradeRouteTravelSegment:
+    segment_type: str
+    system_nickname: str
+    system: str
+    seconds: int
+    distance: int | None = None
+    from_label: str = ""
+    to_label: str = ""
+    station: str = ""
 
 
 @dataclass(slots=True)
@@ -85,12 +104,15 @@ class TradeRouteLoopRow:
     cargo_capacity: int
     total_profit: int
     total_jumps: int
+    travel_time_seconds: int | None = None
+    profit_per_minute: int | None = None
 
 
 @dataclass(slots=True)
 class InstallationLayout:
     freelancer_ini: Path
     goods_files: list[Path]
+    equip_files: list[Path]
     market_files: list[Path]
     group_files: list[Path]
     universe_file: Path | None
@@ -101,14 +123,22 @@ class TradeRouteContext:
     layout: InstallationLayout
     commodity_prices: dict[str, int]
     commodity_names: dict[str, str]
+    commodity_volumes: dict[str, float]
     faction_names: dict[str, str]
     system_index: dict[str, dict[str, object]]
     base_index: dict[str, dict[str, object]]
     adjacency: dict[str, set[str]]
     market_entries: dict[str, list[dict[str, object]]]
+    system_visual_cache: dict[str, dict[str, object]]
 
 
 class TradeRouteService:
+    CRUISE_SPEED = 300.0
+    TRADE_LANE_SPEED = 2500.0
+    GATE_TIME_SECONDS = 10
+    BUY_AND_LAUNCH_TIME_SECONDS = 15
+    LAND_AND_SELL_TIME_SECONDS = 20
+
     def __init__(self, cheat_service: CheatService) -> None:
         self.cheat_service = cheat_service
         self._context_cache: dict[str, TradeRouteContext] = {}
@@ -116,6 +146,7 @@ class TradeRouteService:
         self._routes_by_system_cache: dict[tuple, list[TradeRouteRow]] = {}
         self._inner_system_cache: dict[tuple, list[TradeRouteRow]] = {}
         self._round_trip_cache: dict[tuple, list[TradeRouteLoopRow]] = {}
+        self._preview_cache: dict[tuple, TradeRoutePreviewData] = {}
 
     @staticmethod
     def _rep_key(player_reputation: dict[str, float] | None) -> tuple:
@@ -130,10 +161,11 @@ class TradeRouteService:
             self._routes_by_system_cache.clear()
             self._inner_system_cache.clear()
             self._round_trip_cache.clear()
+            self._preview_cache.clear()
         else:
             self._context_cache.pop(installation_id, None)
             for cache in (self._candidate_cache, self._routes_by_system_cache,
-                          self._inner_system_cache, self._round_trip_cache):
+                          self._inner_system_cache, self._round_trip_cache, self._preview_cache):
                 for key in [k for k in cache if k[0] == installation_id]:
                     cache.pop(key, None)
 
@@ -166,10 +198,11 @@ class TradeRouteService:
         *,
         cargo_capacity: int,
         max_jumps: int,
+        include_return_trip: bool = False,
         player_reputation: dict[str, float] | None = None,
         progress_callback: object | None = None,
     ) -> list[TradeRouteRow]:
-        cache_key = (installation.id, cargo_capacity, max_jumps, self._rep_key(player_reputation))
+        cache_key = (installation.id, cargo_capacity, max_jumps, include_return_trip, self._rep_key(player_reputation))
         cached = self._routes_by_system_cache.get(cache_key)
         if cached is not None:
             if progress_callback is not None:
@@ -199,6 +232,7 @@ class TradeRouteService:
 
         rows = list(best_by_system.values())
         rows.sort(key=lambda item: (item.total_profit, item.profit_per_unit, item.source_system), reverse=True)
+        self._apply_route_metrics(context, rows, include_return_trip=include_return_trip)
         self._routes_by_system_cache[cache_key] = rows
         return rows
 
@@ -207,10 +241,11 @@ class TradeRouteService:
         installation: Installation,
         *,
         cargo_capacity: int,
+        include_return_trip: bool = False,
         player_reputation: dict[str, float] | None = None,
         progress_callback: object | None = None,
     ) -> list[TradeRouteRow]:
-        cache_key = (installation.id, cargo_capacity, self._rep_key(player_reputation))
+        cache_key = (installation.id, cargo_capacity, include_return_trip, self._rep_key(player_reputation))
         cached = self._inner_system_cache.get(cache_key)
         if cached is not None:
             if progress_callback is not None:
@@ -233,8 +268,22 @@ class TradeRouteService:
             ),
         )
         candidates.sort(key=lambda item: (item.total_profit, item.profit_per_unit, item.source_system), reverse=True)
+        self._apply_route_metrics(context, candidates, include_return_trip=include_return_trip)
         self._inner_system_cache[cache_key] = candidates
         return candidates
+
+    def build_route_travel_breakdown(
+        self,
+        installation: Installation,
+        route: TradeRouteRow,
+    ) -> tuple[list[TradeRouteTravelSegment], list[TradeRouteTravelSegment] | None]:
+        context = self._build_trade_route_context(installation)
+        outbound_segments, _ = self._build_route_travel_segments(context, route)
+        return_segments: list[TradeRouteTravelSegment] | None = None
+        if route.return_travel_time_seconds > 0:
+            reverse_route = self._reverse_route(route)
+            return_segments, _ = self._build_route_travel_segments(context, reverse_route)
+        return outbound_segments, return_segments
 
     def best_routes_per_base(
         self,
@@ -332,15 +381,24 @@ class TradeRouteService:
 
         loops.sort(key=lambda item: (item.total_profit, -item.total_jumps, item.route_text), reverse=True)
         result = loops[: max(1, int(max_results))]
+        self._apply_loop_metrics(context, result)
         self._round_trip_cache[cache_key] = result
         return result
 
     def build_route_preview(self, installation: Installation, route: TradeRouteRow) -> TradeRoutePreviewData:
         context = self._build_trade_route_context(installation)
-        layout = context.layout
         system_index = context.system_index
         base_index = context.base_index
-        system_cache = self._build_system_visual_cache(layout, system_index, base_index)
+        preview_key = (
+            installation.id,
+            route.buy_base_nickname.lower(),
+            route.sell_base_nickname.lower(),
+            tuple(route.path_nicknames),
+        )
+        cached_preview = self._preview_cache.get(preview_key)
+        if cached_preview is not None:
+            return cached_preview
+        system_cache = context.system_visual_cache
 
         buy_base = base_index.get(route.buy_base_nickname.lower())
         sell_base = base_index.get(route.sell_base_nickname.lower())
@@ -385,7 +443,9 @@ class TradeRouteService:
                 )
             )
 
-        return TradeRoutePreviewData(commodity=route.commodity, systems=preview_systems)
+        preview_data = TradeRoutePreviewData(commodity=route.commodity, systems=preview_systems)
+        self._preview_cache[preview_key] = preview_data
+        return preview_data
 
     def _build_trade_route_context(self, installation: Installation) -> TradeRouteContext:
         cached = self._context_cache.get(installation.id)
@@ -393,7 +453,11 @@ class TradeRouteService:
             return cached
         layout = self._load_layout(installation)
         resource_dlls = self.cheat_service._resource_dll_paths(installation)
-        commodity_prices, commodity_names = self._scan_commodity_prices(layout.goods_files, resource_dlls)
+        commodity_prices, commodity_names, commodity_volumes = self._scan_commodity_prices(
+            layout.goods_files,
+            layout.equip_files,
+            resource_dlls,
+        )
         faction_names = self._load_faction_names(layout.group_files, resource_dlls)
         system_index = self._build_system_index(layout.universe_file, resource_dlls)
         base_index = self._build_base_index(layout.universe_file, resource_dlls)
@@ -402,15 +466,18 @@ class TradeRouteService:
         adjacency = self._build_system_adjacency(layout.universe_file, locked_gate_hashes)
         market_entries = self._extract_market_entries(layout.market_files, base_index, commodity_prices)
         market_entries = self._add_implicit_base_price_sinks(market_entries, base_index, commodity_prices)
+        system_visual_cache = self._build_system_visual_cache(layout, system_index, base_index)
         context = TradeRouteContext(
             layout=layout,
             commodity_prices=commodity_prices,
             commodity_names=commodity_names,
+            commodity_volumes=commodity_volumes,
             faction_names=faction_names,
             system_index=system_index,
             base_index=base_index,
             adjacency=adjacency,
             market_entries=market_entries,
+            system_visual_cache=system_visual_cache,
         )
         self._context_cache[installation.id] = context
         return context
@@ -443,6 +510,10 @@ class TradeRouteService:
             sinks = [entry for entry in accessible_entries if not bool(entry["is_source"])]
             if not sources or not sinks:
                 continue
+            commodity_volume = max(1.0, float(context.commodity_volumes.get(commodity.lower(), 1.0) or 1.0))
+            cargo_units = max(0, int(math.floor(max(0, cargo_capacity) / commodity_volume)))
+            if cargo_units <= 0:
+                continue
             for source in sources:
                 for sink in sinks:
                     if source["base_nick"] == sink["base_nick"]:
@@ -469,17 +540,93 @@ class TradeRouteService:
                             sell_base_nickname=str(sink["base_nick"]),
                             sell_base=str(context.base_index.get(str(sink["base_nick"]).lower(), {}).get("display_name", sink["base_nick"])),
                             commodity=context.commodity_names.get(commodity.lower(), self._commodity_fallback_name(commodity)),
+                            commodity_volume=commodity_volume,
+                            cargo_units=cargo_units,
                             buy_price=int(round(float(source["price"]))),
                             sell_price=int(round(float(sink["price"]))),
                             profit_per_unit=profit_per_unit,
                             cargo_capacity=max(0, cargo_capacity),
-                            total_profit=profit_per_unit * max(0, cargo_capacity),
+                            total_profit=profit_per_unit * cargo_units,
                             jumps=jumps,
                             path=[str(context.system_index.get(node, {}).get("display_name", node)) for node in path],
                             path_nicknames=list(path),
                         )
                     )
         return routes
+
+    def _apply_route_metrics(
+        self,
+        context: TradeRouteContext,
+        routes: list[TradeRouteRow],
+        *,
+        include_return_trip: bool,
+    ) -> None:
+        travel_cache: dict[tuple[str, str, tuple[str, ...]], int | None] = {}
+        for route in routes:
+            travel_time = self._estimate_route_travel_time(context, route, travel_cache)
+            route.one_way_travel_time_seconds = travel_time
+            route.return_travel_time_seconds = 0
+            effective_time = travel_time
+            if include_return_trip:
+                reverse_route = self._reverse_route(route)
+                return_time = self._estimate_route_travel_time(context, reverse_route, travel_cache)
+                route.return_travel_time_seconds = return_time or 0
+                effective_time = None if travel_time is None or return_time is None else travel_time + return_time
+            route.travel_time_seconds = effective_time
+            route.profit_per_minute = (
+                int(round(route.total_profit / (effective_time / 60.0)))
+                if effective_time and effective_time > 0
+                else None
+            )
+
+    def _reverse_route(self, route: TradeRouteRow) -> TradeRouteRow:
+        return TradeRouteRow(
+            source_system_nickname=route.target_system_nickname,
+            source_system=route.target_system,
+            buy_base_nickname=route.sell_base_nickname,
+            buy_base=route.sell_base,
+            target_system_nickname=route.source_system_nickname,
+            target_system=route.source_system,
+            sell_base_nickname=route.buy_base_nickname,
+            sell_base=route.buy_base,
+            commodity=route.commodity,
+            commodity_volume=route.commodity_volume,
+            cargo_units=route.cargo_units,
+            buy_price=route.sell_price,
+            sell_price=route.buy_price,
+            profit_per_unit=0,
+            cargo_capacity=route.cargo_capacity,
+            total_profit=0,
+            jumps=route.jumps,
+            path=list(reversed(route.path)),
+            path_nicknames=list(reversed(route.path_nicknames)),
+        )
+
+    def _apply_loop_metrics(self, context: TradeRouteContext, loops: list[TradeRouteLoopRow]) -> None:
+        travel_cache: dict[tuple[str, str, tuple[str, ...]], int | None] = {}
+        for loop in loops:
+            total_time = 0
+            has_complete_time = True
+            for leg in loop.legs:
+                travel_time = self._estimate_route_travel_time(context, leg, travel_cache)
+                leg.one_way_travel_time_seconds = travel_time
+                leg.travel_time_seconds = travel_time
+                leg.return_travel_time_seconds = 0
+                leg.profit_per_minute = (
+                    int(round(leg.total_profit / (travel_time / 60.0)))
+                    if travel_time and travel_time > 0
+                    else None
+                )
+                if travel_time is None:
+                    has_complete_time = False
+                else:
+                    total_time += travel_time
+            loop.travel_time_seconds = total_time if has_complete_time else None
+            loop.profit_per_minute = (
+                int(round(loop.total_profit / (total_time / 60.0)))
+                if has_complete_time and total_time > 0
+                else None
+            )
 
     def _search_round_trip_loops(
         self,
@@ -548,12 +695,14 @@ class TradeRouteService:
         freelancer_ini = self.cheat_service._freelancer_ini_path(installation)
         sections = self._parse_ini_file(freelancer_ini)
         goods_files = self._resolve_data_files(freelancer_ini, sections, "goods")
+        equip_files = self._resolve_data_files(freelancer_ini, sections, "equipment")
         market_files = self._resolve_data_files(freelancer_ini, sections, "markets")
         group_files = self._resolve_data_files(freelancer_ini, sections, "groups")
         universe_files = self._resolve_data_files(freelancer_ini, sections, "universe")
         return InstallationLayout(
             freelancer_ini=freelancer_ini,
             goods_files=goods_files,
+            equip_files=equip_files,
             market_files=market_files,
             group_files=group_files,
             universe_file=universe_files[0] if universe_files else None,
@@ -684,10 +833,12 @@ class TradeRouteService:
     def _scan_commodity_prices(
         self,
         goods_files: list[Path],
+        equip_files: list[Path],
         resource_dlls: list[Path],
-    ) -> tuple[dict[str, int], dict[str, str]]:
+    ) -> tuple[dict[str, int], dict[str, str], dict[str, float]]:
         prices: dict[str, int] = {}
         names: dict[str, str] = {}
+        volumes: dict[str, float] = {}
         for goods_file in goods_files:
             for section_name, entries in self._parse_ini_file(goods_file):
                 if section_name.lower() != "good":
@@ -716,7 +867,259 @@ class TradeRouteService:
                         resource_dlls,
                     )
                 names[nickname.lower()] = resolved_name or self._commodity_fallback_name(nickname)
-        return prices, names
+        for equip_file in equip_files:
+            for section_name, entries in self._parse_ini_file(equip_file):
+                if section_name.lower() != "commodity":
+                    continue
+                nickname = ""
+                volume = 1.0
+                for key, value in entries:
+                    key_lower = key.lower()
+                    if key_lower == "nickname":
+                        nickname = value.strip().lower()
+                    elif key_lower == "volume":
+                        try:
+                            volume = float(value.strip())
+                        except ValueError:
+                            volume = 1.0
+                if not nickname.startswith("commodity_"):
+                    continue
+                volumes[nickname] = max(1.0, volume)
+        return prices, names, volumes
+
+    def _estimate_route_travel_time(
+        self,
+        context: TradeRouteContext,
+        route: TradeRouteRow,
+        travel_cache: dict[tuple[str, str, tuple[str, ...]], int | None],
+    ) -> int | None:
+        _, total_seconds = self._build_route_travel_segments(context, route, travel_cache)
+        return total_seconds
+
+    def _build_route_travel_segments(
+        self,
+        context: TradeRouteContext,
+        route: TradeRouteRow,
+        travel_cache: dict[tuple[str, str, tuple[str, ...]], int | None] | None = None,
+    ) -> tuple[list[TradeRouteTravelSegment], int | None]:
+        cache_key = (
+            route.buy_base_nickname.lower(),
+            route.sell_base_nickname.lower(),
+            tuple(route.path_nicknames),
+        )
+        if travel_cache is not None and cache_key in travel_cache:
+            cached_total = travel_cache[cache_key]
+            if cached_total is None:
+                return [], None
+
+        buy_base = context.base_index.get(route.buy_base_nickname.lower())
+        sell_base = context.base_index.get(route.sell_base_nickname.lower())
+        start_position = self._coerce_point((buy_base or {}).get("pos"))
+        end_position = self._coerce_point((sell_base or {}).get("pos"))
+        if start_position is None or end_position is None:
+            if travel_cache is not None:
+                travel_cache[cache_key] = None
+            return [], None
+
+        path_nicknames = route.path_nicknames or [route.source_system_nickname]
+        segments: list[TradeRouteTravelSegment] = []
+        total_time = self.BUY_AND_LAUNCH_TIME_SECONDS + self.LAND_AND_SELL_TIME_SECONDS
+        origin_system = path_nicknames[0] if path_nicknames else route.source_system_nickname
+        segments.append(
+            TradeRouteTravelSegment(
+                segment_type="buy_start",
+                system_nickname=origin_system,
+                system=str(context.system_index.get(origin_system, {}).get("display_name", origin_system)),
+                seconds=self.BUY_AND_LAUNCH_TIME_SECONDS,
+                station=route.buy_base,
+            )
+        )
+
+        if len(path_nicknames) == 1:
+            system_info = context.system_visual_cache.get(path_nicknames[0], {})
+            intra_segments, intra_time = self._build_intra_system_segments(
+                system_nick=path_nicknames[0],
+                system_info=system_info,
+                start_pt=start_position,
+                end_pt=end_position,
+                context=context,
+            )
+            if intra_time is None:
+                if travel_cache is not None:
+                    travel_cache[cache_key] = None
+                return [], None
+            segments.extend(intra_segments)
+            segments.append(
+                TradeRouteTravelSegment(
+                    segment_type="dock_sell",
+                    system_nickname=path_nicknames[0],
+                    system=str(context.system_index.get(path_nicknames[0], {}).get("display_name", path_nicknames[0])),
+                    seconds=self.LAND_AND_SELL_TIME_SECONDS,
+                    station=route.sell_base,
+                )
+            )
+            result = int(round(total_time + intra_time))
+            if travel_cache is not None:
+                travel_cache[cache_key] = result
+            return segments, result
+
+        for index, system_nick in enumerate(path_nicknames):
+            system_info = context.system_visual_cache.get(system_nick, {})
+            if index == 0:
+                segment_start = start_position
+                segment_end = self._pick_jump_point(system_info, path_nicknames[index + 1], start_position)
+            elif index == len(path_nicknames) - 1:
+                segment_end = end_position
+                segment_start = self._pick_jump_point(system_info, path_nicknames[index - 1], end_position)
+            else:
+                segment_start = self._pick_jump_point(system_info, path_nicknames[index - 1], None)
+                segment_end = self._pick_jump_point(system_info, path_nicknames[index + 1], segment_start)
+            if segment_start is None or segment_end is None:
+                if travel_cache is not None:
+                    travel_cache[cache_key] = None
+                return [], None
+            intra_segments, intra_time = self._build_intra_system_segments(
+                system_nick=system_nick,
+                system_info=system_info,
+                start_pt=segment_start,
+                end_pt=segment_end,
+                context=context,
+            )
+            if intra_time is None:
+                if travel_cache is not None:
+                    travel_cache[cache_key] = None
+                return [], None
+            segments.extend(intra_segments)
+            total_time += intra_time
+            if index < len(path_nicknames) - 1:
+                segments.append(
+                    TradeRouteTravelSegment(
+                        segment_type="jump",
+                        system_nickname=system_nick,
+                        system=str(context.system_index.get(system_nick, {}).get("display_name", system_nick)),
+                        seconds=self.GATE_TIME_SECONDS,
+                        from_label=str(context.system_index.get(system_nick, {}).get("display_name", system_nick)),
+                        to_label=str(context.system_index.get(path_nicknames[index + 1], {}).get("display_name", path_nicknames[index + 1])),
+                    )
+                )
+                total_time += self.GATE_TIME_SECONDS
+
+        last_system = path_nicknames[-1]
+        segments.append(
+            TradeRouteTravelSegment(
+                segment_type="dock_sell",
+                system_nickname=last_system,
+                system=str(context.system_index.get(last_system, {}).get("display_name", last_system)),
+                seconds=self.LAND_AND_SELL_TIME_SECONDS,
+                station=route.sell_base,
+            )
+        )
+        result = int(round(total_time))
+        if travel_cache is not None:
+            travel_cache[cache_key] = result
+        return segments, result
+
+    def _build_intra_system_segments(
+        self,
+        *,
+        system_nick: str,
+        system_info: dict[str, object],
+        start_pt: tuple[float, float],
+        end_pt: tuple[float, float],
+        context: TradeRouteContext,
+    ) -> tuple[list[TradeRouteTravelSegment], float | None]:
+        local_path = self._trade_route_local_path(system_info, start_pt, end_pt)
+        if len(local_path) < 2:
+            return [], 0.0
+        lane_edges = {
+            frozenset(((round(a[0], 3), round(a[1], 3)), (round(b[0], 3), round(b[1], 3))))
+            for a, b in list(system_info.get("lane_edges", []))
+        }
+        system_name = str(context.system_index.get(system_nick, {}).get("display_name", system_nick))
+        segments: list[TradeRouteTravelSegment] = []
+        total_time = 0.0
+        for first, second in zip(local_path, local_path[1:]):
+            edge_key = frozenset(((round(first[0], 3), round(first[1], 3)), (round(second[0], 3), round(second[1], 3))))
+            distance = int(round(self._distance2d(first, second)))
+            if edge_key in lane_edges:
+                seconds = max(1, int(round(distance / self.TRADE_LANE_SPEED)))
+                segment_type = "trade_lane"
+            else:
+                seconds = max(1, int(round(distance / self.CRUISE_SPEED)))
+                segment_type = "open_space"
+            segments.append(
+                TradeRouteTravelSegment(
+                    segment_type=segment_type,
+                    system_nickname=system_nick,
+                    system=system_name,
+                    seconds=seconds,
+                    distance=distance,
+                )
+            )
+            total_time += seconds
+        return segments, total_time
+
+    def _estimate_intra_system_time(
+        self,
+        system_info: dict[str, object],
+        start_pt: tuple[float, float],
+        end_pt: tuple[float, float],
+    ) -> float | None:
+        lane_edges = list(system_info.get("lane_edges", []))
+        nodes: list[tuple[float, float]] = [start_pt, end_pt]
+        node_index: dict[tuple[int, int], int] = {
+            (int(round(start_pt[0] * 10)), int(round(start_pt[1] * 10))): 0,
+            (int(round(end_pt[0] * 10)), int(round(end_pt[1] * 10))): 1,
+        }
+
+        def add_node(point: tuple[float, float]) -> int:
+            key = (int(round(point[0] * 10)), int(round(point[1] * 10)))
+            if key in node_index:
+                return node_index[key]
+            node_index[key] = len(nodes)
+            nodes.append(point)
+            return node_index[key]
+
+        for edge_start, edge_end in lane_edges:
+            add_node(edge_start)
+            add_node(edge_end)
+
+        adjacency: list[list[tuple[int, float]]] = [[] for _ in range(len(nodes))]
+
+        def link(first_index: int, second_index: int, weight: float) -> None:
+            adjacency[first_index].append((second_index, weight))
+            adjacency[second_index].append((first_index, weight))
+
+        link(0, 1, self._distance2d(start_pt, end_pt) / self.CRUISE_SPEED)
+        for node in range(2, len(nodes)):
+            link(0, node, self._distance2d(start_pt, nodes[node]) / self.CRUISE_SPEED)
+            link(1, node, self._distance2d(end_pt, nodes[node]) / self.CRUISE_SPEED)
+
+        for edge_start, edge_end in lane_edges:
+            start_index = add_node(edge_start)
+            end_index = add_node(edge_end)
+            link(start_index, end_index, self._distance2d(edge_start, edge_end) / self.TRADE_LANE_SPEED)
+
+        distances = [float("inf")] * len(nodes)
+        visited = [False] * len(nodes)
+        distances[0] = 0.0
+        for _ in range(len(nodes)):
+            current = -1
+            current_distance = float("inf")
+            for index, value in enumerate(distances):
+                if not visited[index] and value < current_distance:
+                    current = index
+                    current_distance = value
+            if current < 0:
+                break
+            if current == 1:
+                return distances[1]
+            visited[current] = True
+            for next_index, weight in adjacency[current]:
+                candidate_distance = distances[current] + weight
+                if candidate_distance < distances[next_index]:
+                    distances[next_index] = candidate_distance
+        return None if math.isinf(distances[1]) else distances[1]
 
     def _extract_market_entries(
         self,
