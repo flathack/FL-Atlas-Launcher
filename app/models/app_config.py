@@ -12,6 +12,7 @@ class AppConfig:
     language: str = "de"
     cheater_mode: bool = False
     selected_resolution: str = ""
+    allow_mod_file_changes: bool = False
     auto_font_scale: bool = False
     hudshift_enabled: bool = False
     hudshift_aspect_ratio: str = "16:9"
@@ -29,6 +30,7 @@ class AppConfig:
             "language": self.language,
             "cheater_mode": self.cheater_mode,
             "selected_resolution": self.selected_resolution,
+            "allow_mod_file_changes": self.allow_mod_file_changes,
             "auto_font_scale": self.auto_font_scale,
             "hudshift_enabled": self.hudshift_enabled,
             "hudshift_aspect_ratio": self.hudshift_aspect_ratio,
@@ -94,6 +96,7 @@ class AppConfig:
             language=data.get("language", "de"),
             cheater_mode=bool(data.get("cheater_mode", False)),
             selected_resolution=data.get("selected_resolution", ""),
+            allow_mod_file_changes=bool(data.get("allow_mod_file_changes", False)),
             auto_font_scale=bool(data.get("auto_font_scale", False)),
             hudshift_enabled=bool(data.get("hudshift_enabled", False)),
             hudshift_aspect_ratio=str(data.get("hudshift_aspect_ratio", "16:9")).strip() or "16:9",

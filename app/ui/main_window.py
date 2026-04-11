@@ -138,6 +138,9 @@ class MainWindow(QMainWindow):
 
         self.mpid_combo = QComboBox()
         self.resolution_combo = QComboBox()
+        self.mod_file_changes_checkbox = QCheckBox(self.tr("allow_mod_file_changes"))
+        self.mod_file_changes_checkbox.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.mod_file_changes_checkbox.setToolTip(self.tr("allow_mod_file_changes_tooltip"))
         self.font_scale_checkbox = QCheckBox(self.tr("font_scale"))
         self.font_scale_checkbox.setCursor(Qt.CursorShape.PointingHandCursor)
         self.hudshift_checkbox = QCheckBox(self.tr("hudshift"))
@@ -161,6 +164,7 @@ class MainWindow(QMainWindow):
         self._connect_signals()
         self._populate_mpid_profiles()
         self._populate_resolutions()
+        self._populate_mod_file_change_permission()
         self._populate_hudshift()
         self._populate_font_scale()
         self._populate_installations()
@@ -258,6 +262,7 @@ class MainWindow(QMainWindow):
         action_layout.addWidget(self.mpid_combo, 2)
         action_layout.addWidget(QLabel(self.tr("resolution")))
         action_layout.addWidget(self.resolution_combo, 1)
+        action_layout.addWidget(self.mod_file_changes_checkbox)
         action_layout.addWidget(self.font_scale_checkbox)
         action_layout.addWidget(self.hudshift_checkbox)
         action_layout.addWidget(self.hudshift_aspect_combo)
@@ -478,6 +483,7 @@ class MainWindow(QMainWindow):
         self.mpid_combo.currentIndexChanged.connect(self._apply_selected_mpid_profile)
         self.launch_button.clicked.connect(self._launch_selected_installation)
         self.resolution_combo.currentTextChanged.connect(self._save_selected_resolution)
+        self.mod_file_changes_checkbox.toggled.connect(self._on_mod_file_changes_toggled)
         self.font_scale_checkbox.toggled.connect(self._on_font_scale_toggled)
         self.hudshift_checkbox.toggled.connect(self._on_hudshift_toggled)
         self.hudshift_aspect_combo.currentTextChanged.connect(self._save_hudshift_aspect_ratio)
@@ -581,27 +587,61 @@ class MainWindow(QMainWindow):
             self.resolution_combo.setCurrentText(unique_resolutions[0])
             self.config.selected_resolution = unique_resolutions[0]
 
+    def _populate_mod_file_change_permission(self) -> None:
+        self._set_checkbox_checked_safely(
+            self.mod_file_changes_checkbox,
+            self.config.allow_mod_file_changes,
+        )
+        self._update_mod_file_controls_state()
+
     def _populate_hudshift(self) -> None:
         ratios = self.hudshift_service.available_aspect_ratios()
         self.hudshift_aspect_combo.clear()
         self.hudshift_aspect_combo.addItems(ratios)
         if self.config.hudshift_aspect_ratio in ratios:
             self.hudshift_aspect_combo.setCurrentText(self.config.hudshift_aspect_ratio)
-        self.hudshift_checkbox.setChecked(self.config.hudshift_enabled)
-        self.hudshift_aspect_combo.setEnabled(self.config.hudshift_enabled)
+        self._set_checkbox_checked_safely(self.hudshift_checkbox, self.config.hudshift_enabled)
+        self._update_mod_file_controls_state()
         self._sync_hudshift_to_installation()
 
     def _populate_font_scale(self) -> None:
-        self.font_scale_checkbox.setChecked(self.config.auto_font_scale)
+        self._set_checkbox_checked_safely(self.font_scale_checkbox, self.config.auto_font_scale)
+        self._update_mod_file_controls_state()
+
+    def _set_checkbox_checked_safely(self, checkbox: QCheckBox, checked: bool) -> None:
+        checkbox.blockSignals(True)
+        checkbox.setChecked(checked)
+        checkbox.blockSignals(False)
+
+    def _mod_file_changes_allowed(self) -> bool:
+        return self._current_installation() is not None and self.config.allow_mod_file_changes
+
+    def _update_mod_file_controls_state(self) -> None:
+        has_installation = self._current_installation() is not None
+        allow_mod_file_changes = has_installation and self.config.allow_mod_file_changes
+        self.mod_file_changes_checkbox.setEnabled(has_installation)
+        self.font_scale_checkbox.setEnabled(allow_mod_file_changes)
+        self.hudshift_checkbox.setEnabled(allow_mod_file_changes)
+        self.hudshift_aspect_combo.setEnabled(allow_mod_file_changes and self.hudshift_checkbox.isChecked())
+
+    def _confirm_enable_mod_file_changes(self) -> bool:
+        answer = QMessageBox.warning(
+            self,
+            self.tr("mod_file_changes_warning_title"),
+            self.tr("mod_file_changes_warning_message"),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return answer == QMessageBox.StandardButton.Yes
 
     def _sync_hudshift_to_installation(self) -> None:
         installation = self._current_installation()
         if installation is None:
+            self._update_mod_file_controls_state()
             return
         active = self.hudshift_service.is_active(installation)
         self.hudshift_checkbox.blockSignals(True)
         self.hudshift_checkbox.setChecked(active)
-        self.hudshift_aspect_combo.setEnabled(active)
         self.hudshift_checkbox.blockSignals(False)
         if active:
             detected = self.hudshift_service.detect_aspect_ratio(installation)
@@ -610,10 +650,23 @@ class MainWindow(QMainWindow):
                 self.hudshift_aspect_combo.blockSignals(True)
                 self.hudshift_aspect_combo.setCurrentText(detected)
                 self.hudshift_aspect_combo.blockSignals(False)
+        self._update_mod_file_controls_state()
+
+    def _on_mod_file_changes_toggled(self, checked: bool) -> None:
+        if checked and not self._confirm_enable_mod_file_changes():
+            self._set_checkbox_checked_safely(self.mod_file_changes_checkbox, False)
+            self._update_mod_file_controls_state()
+            self.statusBar().showMessage(self.tr("mod_file_changes_disabled_status"), 5000)
+            return
+        self.config.allow_mod_file_changes = checked
+        self._persist_config()
+        self._update_mod_file_controls_state()
+        status_key = "mod_file_changes_enabled_status" if checked else "mod_file_changes_disabled_status"
+        self.statusBar().showMessage(self.tr(status_key), 5000)
 
     def _on_hudshift_toggled(self, checked: bool) -> None:
         self.config.hudshift_enabled = checked
-        self.hudshift_aspect_combo.setEnabled(checked)
+        self._update_mod_file_controls_state()
         self._persist_config()
 
     def _save_hudshift_aspect_ratio(self, ratio: str) -> None:
@@ -671,11 +724,11 @@ class MainWindow(QMainWindow):
     def _update_launch_state(self) -> None:
         has_installation = self._current_installation() is not None
         self.launch_button.setEnabled(has_installation)
-        self.font_scale_checkbox.setEnabled(has_installation)
         if self.show_cheat_features:
             self.cheater_mode_switch.setEnabled(has_installation)
         self.trade_routes_action.setEnabled(has_installation)
         self.reputation_action.setEnabled(has_installation)
+        self._update_mod_file_controls_state()
         self._update_cheat_panel_state(has_installation)
         self._update_cheat_panel_visibility()
 
@@ -758,6 +811,8 @@ class MainWindow(QMainWindow):
             return
         self._populate_mpid_profiles()
         self._populate_resolutions()
+        self._populate_mod_file_change_permission()
+        self._populate_hudshift()
         self._populate_font_scale()
         self._populate_installations()
         self._refresh_sync_state(trigger_sync=False)
@@ -849,10 +904,16 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            if self.font_scale_checkbox.isChecked():
-                self.font_scale_service.apply(installation, self.resolution_combo.currentText())
+            if self._mod_file_changes_allowed():
+                if self.font_scale_checkbox.isChecked():
+                    self.font_scale_service.apply(installation, self.resolution_combo.currentText())
+                else:
+                    self.font_scale_service.restore_original(installation)
             else:
-                self.font_scale_service.restore_original(installation)
+                self.logger.info(
+                    "Skipping font file modifications for '%s' because mod file changes are locked",
+                    installation.name,
+                )
         except Exception as error:
             self.logger.error("Font scaling failed for '%s': %s", installation.name, error)
             QMessageBox.critical(
@@ -862,7 +923,7 @@ class MainWindow(QMainWindow):
             )
             return
 
-        if self.hudshift_checkbox.isChecked():
+        if self._mod_file_changes_allowed() and self.hudshift_checkbox.isChecked():
             try:
                 aspect_ratio = self.hudshift_aspect_combo.currentText()
                 self.hudshift_service.apply(installation, aspect_ratio)
@@ -912,6 +973,8 @@ class MainWindow(QMainWindow):
     def _rebuild_translated_ui(self) -> None:
         self.setWindowTitle(self.tr("app_title", version=self.app_version))
         self.launch_button.setText(self.tr("start"))
+        self.mod_file_changes_checkbox.setText(self.tr("allow_mod_file_changes"))
+        self.mod_file_changes_checkbox.setToolTip(self.tr("allow_mod_file_changes_tooltip"))
         self.font_scale_checkbox.setText(self.tr("font_scale"))
         self.hudshift_checkbox.setText(self.tr("hudshift"))
         central_widget = self.takeCentralWidget()
@@ -924,6 +987,8 @@ class MainWindow(QMainWindow):
         self._connect_signals()
         self._populate_mpid_profiles()
         self._populate_resolutions()
+        self._populate_mod_file_change_permission()
+        self._populate_hudshift()
         self._populate_font_scale()
         self._populate_installations()
         self._update_sync_indicator(self._sync_state or "unconfigured")
