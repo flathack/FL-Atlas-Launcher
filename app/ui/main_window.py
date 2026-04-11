@@ -4,6 +4,8 @@ from datetime import datetime
 import logging
 import json
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 import threading
 
@@ -1570,6 +1572,13 @@ class MainWindow(QMainWindow):
         menu = QMenu(self.installation_list)
         launch_action = menu.addAction(self.tr("start"))
         launch_action.triggered.connect(self._launch_selected_installation)
+        method = installation.launch_method.strip().lower()
+        if method == "lutris":
+            container_action = menu.addAction(self.tr("start_lutris"))
+            container_action.triggered.connect(self._launch_lutris_app)
+        elif method == "bottles":
+            container_action = menu.addAction(self.tr("start_bottles"))
+            container_action.triggered.connect(self._launch_bottles_app)
         explorer_action = menu.addAction(self.tr("show_in_explorer"))
         explorer_action.triggered.connect(self._show_selected_installation_in_explorer)
         if self._is_installation_running(installation):
@@ -1601,6 +1610,31 @@ class MainWindow(QMainWindow):
                 self.tr("show_in_explorer_failed_title"),
                 self.tr("show_in_explorer_failed_message", error=error),
             )
+
+    def _launch_lutris_app(self) -> None:
+        self._launch_container_app("Lutris", ["lutris"])
+
+    def _launch_bottles_app(self) -> None:
+        if shutil.which("bottles"):
+            self._launch_container_app("Bottles", ["bottles"])
+            return
+        if shutil.which("flatpak"):
+            self._launch_container_app("Bottles", ["flatpak", "run", "com.usebottles.bottles"])
+            return
+        self._show_container_launch_error("Bottles", "Bottles or Flatpak was not found.")
+
+    def _launch_container_app(self, name: str, command: list[str]) -> None:
+        try:
+            subprocess.Popen(command, close_fds=True)
+        except OSError as error:
+            self._show_container_launch_error(name, error)
+
+    def _show_container_launch_error(self, name: str, error: object) -> None:
+        QMessageBox.critical(
+            self,
+            self.tr("container_launch_failed_title"),
+            self.tr("container_launch_failed_message", name=name, error=error),
+        )
 
     def _stop_selected_installation_processes(self) -> None:
         installation = self._current_installation()
