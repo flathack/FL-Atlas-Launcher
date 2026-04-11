@@ -12,7 +12,6 @@ class AppConfig:
     language: str = "de"
     cheater_mode: bool = False
     selected_resolution: str = ""
-    allow_mod_file_changes: bool = False
     auto_font_scale: bool = False
     hudshift_enabled: bool = False
     hudshift_aspect_ratio: str = "16:9"
@@ -30,7 +29,6 @@ class AppConfig:
             "language": self.language,
             "cheater_mode": self.cheater_mode,
             "selected_resolution": self.selected_resolution,
-            "allow_mod_file_changes": self.allow_mod_file_changes,
             "auto_font_scale": self.auto_font_scale,
             "hudshift_enabled": self.hudshift_enabled,
             "hudshift_aspect_ratio": self.hudshift_aspect_ratio,
@@ -45,11 +43,15 @@ class AppConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> "AppConfig":
-        installations = [
-            Installation.from_dict(item)
-            for item in data.get("installations", [])
-            if isinstance(item, dict)
-        ]
+        legacy_allow_mod_file_changes = bool(data.get("allow_mod_file_changes", False))
+        installations: list[Installation] = []
+        for item in data.get("installations", []):
+            if not isinstance(item, dict):
+                continue
+            installation = Installation.from_dict(item)
+            if "allow_mod_file_changes" not in item and legacy_allow_mod_file_changes:
+                installation.allow_mod_file_changes = True
+            installations.append(installation)
         mpid_servers = [
             MpidServer.from_dict(item)
             for item in data.get("mpid_servers", [])
@@ -96,7 +98,6 @@ class AppConfig:
             language=data.get("language", "de"),
             cheater_mode=bool(data.get("cheater_mode", False)),
             selected_resolution=data.get("selected_resolution", ""),
-            allow_mod_file_changes=bool(data.get("allow_mod_file_changes", False)),
             auto_font_scale=bool(data.get("auto_font_scale", False)),
             hudshift_enabled=bool(data.get("hudshift_enabled", False)),
             hudshift_aspect_ratio=str(data.get("hudshift_aspect_ratio", "16:9")).strip() or "16:9",

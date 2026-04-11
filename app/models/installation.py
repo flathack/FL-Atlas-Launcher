@@ -14,6 +14,7 @@ class Installation:
     prefix_path: str = ""
     runner_target: str = ""
     launch_arguments: str = ""
+    allow_mod_file_changes: bool = False
     cheater_mode_enabled: bool = False
     last_played_at: str = ""
 
@@ -27,6 +28,7 @@ class Installation:
         prefix_path: str = "",
         runner_target: str = "",
         launch_arguments: str = "",
+        allow_mod_file_changes: bool = False,
         cheater_mode_enabled: bool = False,
     ) -> "Installation":
         return cls(
@@ -38,6 +40,7 @@ class Installation:
             prefix_path=prefix_path.strip(),
             runner_target=runner_target.strip(),
             launch_arguments=launch_arguments.strip(),
+            allow_mod_file_changes=allow_mod_file_changes,
             cheater_mode_enabled=cheater_mode_enabled,
         )
 
@@ -55,6 +58,7 @@ class Installation:
             prefix_path=str(data.get("prefix_path", "")).strip(),
             runner_target=str(data.get("runner_target", "")).strip(),
             launch_arguments=str(data.get("launch_arguments", "")).strip(),
+            allow_mod_file_changes=bool(data.get("allow_mod_file_changes", False)),
             cheater_mode_enabled=bool(data.get("cheater_mode_enabled", False)),
             last_played_at=str(data.get("last_played_at", "")).strip(),
         )

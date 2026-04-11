@@ -588,9 +588,10 @@ class MainWindow(QMainWindow):
             self.config.selected_resolution = unique_resolutions[0]
 
     def _populate_mod_file_change_permission(self) -> None:
+        installation = self._current_installation()
         self._set_checkbox_checked_safely(
             self.mod_file_changes_checkbox,
-            self.config.allow_mod_file_changes,
+            bool(installation and installation.allow_mod_file_changes),
         )
         self._update_mod_file_controls_state()
 
@@ -614,11 +615,13 @@ class MainWindow(QMainWindow):
         checkbox.blockSignals(False)
 
     def _mod_file_changes_allowed(self) -> bool:
-        return self._current_installation() is not None and self.config.allow_mod_file_changes
+        installation = self._current_installation()
+        return installation is not None and installation.allow_mod_file_changes
 
     def _update_mod_file_controls_state(self) -> None:
-        has_installation = self._current_installation() is not None
-        allow_mod_file_changes = has_installation and self.config.allow_mod_file_changes
+        installation = self._current_installation()
+        has_installation = installation is not None
+        allow_mod_file_changes = bool(installation and installation.allow_mod_file_changes)
         self.mod_file_changes_checkbox.setEnabled(has_installation)
         self.font_scale_checkbox.setEnabled(allow_mod_file_changes)
         self.hudshift_checkbox.setEnabled(allow_mod_file_changes)
@@ -653,14 +656,20 @@ class MainWindow(QMainWindow):
         self._update_mod_file_controls_state()
 
     def _on_mod_file_changes_toggled(self, checked: bool) -> None:
+        installation = self._current_installation()
+        if installation is None:
+            self._set_checkbox_checked_safely(self.mod_file_changes_checkbox, False)
+            self._update_mod_file_controls_state()
+            return
         if checked and not self._confirm_enable_mod_file_changes():
             self._set_checkbox_checked_safely(self.mod_file_changes_checkbox, False)
             self._update_mod_file_controls_state()
             self.statusBar().showMessage(self.tr("mod_file_changes_disabled_status"), 5000)
             return
-        self.config.allow_mod_file_changes = checked
+        installation.allow_mod_file_changes = checked
         self._persist_config()
         self._update_mod_file_controls_state()
+        self._apply_process_icons()
         status_key = "mod_file_changes_enabled_status" if checked else "mod_file_changes_disabled_status"
         self.statusBar().showMessage(self.tr(status_key), 5000)
 
@@ -707,6 +716,8 @@ class MainWindow(QMainWindow):
         connection_label = self._connection_badge_text(installation)
         if connection_label:
             base_icon = self._with_connection_badge(base_icon, connection_label)
+        if installation.allow_mod_file_changes:
+            base_icon = self._with_mod_file_changes_badge(base_icon)
         if self.hudshift_service.is_active(installation):
             base_icon = self._with_hudshift_badge(base_icon)
         if installation.cheater_mode_enabled:
@@ -734,6 +745,7 @@ class MainWindow(QMainWindow):
 
     def _on_installation_changed(self) -> None:
         self._populate_mpid_profiles()
+        self._populate_mod_file_change_permission()
         self._update_launch_state()
         self._sync_cheat_panel_to_installation()
         self._sync_hudshift_to_installation()
@@ -1428,6 +1440,33 @@ class MainWindow(QMainWindow):
         painter.setBrush(QColor("#39d353"))
         painter.setPen(QPen(QColor("#f8fafc"), 2))
         painter.drawEllipse(32, 32, 14, 14)
+        painter.end()
+        return QIcon(pixmap)
+
+    def _with_mod_file_changes_badge(self, icon: QIcon) -> QIcon:
+        size = QSize(48, 48)
+        pixmap = icon.pixmap(size)
+        if pixmap.size() != size:
+            pixmap = pixmap.scaled(size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            padded = pixmap.__class__(size)
+            padded.fill(QColor(0, 0, 0, 0))
+            p = QPainter(padded)
+            x = (size.width() - pixmap.width()) // 2
+            y = (size.height() - pixmap.height()) // 2
+            p.drawPixmap(x, y, pixmap)
+            p.end()
+            pixmap = padded
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(245, 158, 11, 230))
+        painter.drawEllipse(2, 2, 16, 16)
+        painter.setPen(QPen(QColor(255, 255, 255), 1.7, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawArc(5, 4, 8, 8, 45 * 16, 240 * 16)
+        painter.setPen(QPen(QColor(255, 255, 255), 1.3))
+        painter.setBrush(QColor(255, 255, 255))
+        painter.drawRoundedRect(6, 9, 7, 5, 1.4, 1.4)
         painter.end()
         return QIcon(pixmap)
 
