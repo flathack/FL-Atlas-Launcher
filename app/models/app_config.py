@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import sys
 
 from .installation import Installation
 from .mpid_profile import MpidProfile, MpidServer
@@ -12,6 +13,7 @@ class AppConfig:
     language: str = "de"
     cheater_mode: bool = False
     selected_resolution: str = ""
+    installation_display_mode: str = "lutris_tiles" if sys.platform.startswith("linux") else "icons"
     auto_font_scale: bool = False
     hudshift_enabled: bool = False
     hudshift_aspect_ratio: str = "16:9"
@@ -29,6 +31,7 @@ class AppConfig:
             "language": self.language,
             "cheater_mode": self.cheater_mode,
             "selected_resolution": self.selected_resolution,
+            "installation_display_mode": self.installation_display_mode,
             "auto_font_scale": self.auto_font_scale,
             "hudshift_enabled": self.hudshift_enabled,
             "hudshift_aspect_ratio": self.hudshift_aspect_ratio,
@@ -98,6 +101,13 @@ class AppConfig:
             language=data.get("language", "de"),
             cheater_mode=bool(data.get("cheater_mode", False)),
             selected_resolution=data.get("selected_resolution", ""),
+            installation_display_mode=str(
+                data.get(
+                    "installation_display_mode",
+                    "lutris_tiles" if sys.platform.startswith("linux") else "icons",
+                )
+            ).strip()
+            or ("lutris_tiles" if sys.platform.startswith("linux") else "icons"),
             auto_font_scale=bool(data.get("auto_font_scale", False)),
             hudshift_enabled=bool(data.get("hudshift_enabled", False)),
             hudshift_aspect_ratio=str(data.get("hudshift_aspect_ratio", "16:9")).strip() or "16:9",

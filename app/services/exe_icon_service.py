@@ -63,6 +63,27 @@ class ExeIconService:
             return icon
         return None
 
+    def cover_art_for_lutris_slug(self, slug: str) -> QIcon | None:
+        normalized = str(slug or "").strip()
+        if not normalized:
+            return None
+
+        cache_key = (f"lutris-cover:{normalized}", 0, 0)
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        for candidate_slug in self._lutris_identifier_candidates(normalized):
+            for candidate in self._lutris_cover_art_candidates(candidate_slug):
+                if not candidate.exists():
+                    continue
+                icon = self._icon_from_artwork(candidate)
+                if icon.isNull():
+                    continue
+                self._cache[cache_key] = icon
+                return icon
+        return None
+
     def _lutris_identifier_candidates(self, target: str) -> list[str]:
         candidates: list[str] = []
         seen: set[str] = set()
@@ -85,14 +106,9 @@ class ExeIconService:
         return candidates
 
     def _icon_for_lutris_identifier(self, identifier: str) -> QIcon | None:
-        lutris_root = Path.home() / ".local" / "share" / "lutris"
         image_candidates = [
-            lutris_root / "coverart" / f"{identifier}.png",
-            lutris_root / "coverart" / f"{identifier}.jpg",
-            lutris_root / "coverart" / f"{identifier}.jpeg",
-            lutris_root / "banners" / f"{identifier}.png",
-            lutris_root / "banners" / f"{identifier}.jpg",
-            lutris_root / "banners" / f"{identifier}.jpeg",
+            *self._lutris_cover_art_candidates(identifier),
+            *self._lutris_banner_candidates(identifier),
         ]
         for candidate in self._lutris_app_icon_candidates(identifier):
             if not candidate.exists():
@@ -110,6 +126,22 @@ class ExeIconService:
                 continue
             return icon
         return None
+
+    def _lutris_cover_art_candidates(self, identifier: str) -> list[Path]:
+        lutris_root = Path.home() / ".local" / "share" / "lutris"
+        return [
+            lutris_root / "coverart" / f"{identifier}.png",
+            lutris_root / "coverart" / f"{identifier}.jpg",
+            lutris_root / "coverart" / f"{identifier}.jpeg",
+        ]
+
+    def _lutris_banner_candidates(self, identifier: str) -> list[Path]:
+        lutris_root = Path.home() / ".local" / "share" / "lutris"
+        return [
+            lutris_root / "banners" / f"{identifier}.png",
+            lutris_root / "banners" / f"{identifier}.jpg",
+            lutris_root / "banners" / f"{identifier}.jpeg",
+        ]
 
     def _lutris_app_icon_candidates(self, identifier: str) -> list[Path]:
         icons_root = Path.home() / ".local" / "share" / "icons" / "hicolor"

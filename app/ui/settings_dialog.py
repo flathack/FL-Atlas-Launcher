@@ -4,6 +4,7 @@ from copy import deepcopy
 import json
 from pathlib import Path
 import subprocess
+import sys
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QIcon
@@ -53,6 +54,7 @@ class SettingsDialog(QDialog):
         translator: Translator,
         current_language: str = "de",
         current_theme: str = "dark_blue",
+        current_display_mode: str = "icons",
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -67,6 +69,7 @@ class SettingsDialog(QDialog):
         self.exe_icon_service = ExeIconService()
         self._current_language = current_language
         self._current_theme = current_theme
+        self._current_display_mode = current_display_mode
 
         self.installation_list = QListWidget()
         self.installation_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -102,6 +105,11 @@ class SettingsDialog(QDialog):
             self.theme_combo.addItem(display, theme_id)
         self.theme_combo.setCurrentIndex(max(0, self.theme_combo.findData(self._current_theme)))
 
+        self.launcher_view_combo = QComboBox()
+        self.launcher_view_combo.addItem(self.tr("launcher_view_lutris_tiles"), "lutris_tiles")
+        self.launcher_view_combo.addItem(self.tr("launcher_view_icons"), "icons")
+        self.launcher_view_combo.setCurrentIndex(max(0, self.launcher_view_combo.findData(self._current_display_mode)))
+
         self.button_box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
@@ -131,6 +139,10 @@ class SettingsDialog(QDialog):
     @property
     def selected_theme(self) -> str:
         return str(self.theme_combo.currentData() or self._current_theme)
+
+    @property
+    def selected_display_mode(self) -> str:
+        return str(self.launcher_view_combo.currentData() or self._current_display_mode)
 
     def tr(self, key: str, **kwargs: object) -> str:
         fallback = kwargs.pop("fallback", None)
@@ -208,6 +220,8 @@ class SettingsDialog(QDialog):
         general_layout.setVerticalSpacing(16)
         general_layout.addRow(self.tr("language"), self.language_combo)
         general_layout.addRow(self.tr("settings_theme"), self.theme_combo)
+        if sys.platform.startswith("linux"):
+            general_layout.addRow(self.tr("settings_launcher_view"), self.launcher_view_combo)
 
         tabs.addTab(general_tab, self.tr("settings_general"))
 

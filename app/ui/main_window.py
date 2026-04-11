@@ -4,6 +4,7 @@ from datetime import datetime
 import logging
 import json
 from pathlib import Path
+import sys
 import threading
 
 from PySide6.QtCore import QEvent, QFileInfo, QObject, QSize, Qt, QTimer, QUrl, Signal
@@ -135,6 +136,7 @@ class MainWindow(QMainWindow):
         self.installation_list.setSpacing(12)
         self.installation_list.setWordWrap(True)
         self.installation_list.setTextElideMode(Qt.TextElideMode.ElideNone)
+        self._apply_installation_list_layout_mode()
 
         self.mpid_combo = QComboBox()
         self.resolution_combo = QComboBox()
@@ -684,6 +686,7 @@ class MainWindow(QMainWindow):
             self._persist_config()
 
     def _populate_installations(self) -> None:
+        self._apply_installation_list_layout_mode()
         self.installation_list.clear()
         last_id = self.config.last_installation_id
         select_row = 0
@@ -692,7 +695,7 @@ class MainWindow(QMainWindow):
             item.setData(Qt.ItemDataRole.UserRole, installation.id)
             item.setToolTip(installation.exe_path)
             item.setTextAlignment(Qt.AlignmentFlag.AlignHCenter)
-            item.setSizeHint(QSize(190, 140))
+            item.setSizeHint(self._installation_item_size_hint(installation))
             self.installation_list.addItem(item)
             if last_id and installation.id == last_id:
                 select_row = index
@@ -703,11 +706,14 @@ class MainWindow(QMainWindow):
 
     def _icon_for_installation(self, installation: Installation) -> QIcon:
         exe_path = self.launcher_service.resolve_executable_path(installation)
+        icon_size = self.installation_list.iconSize() if hasattr(self, "installation_list") else QSize(48, 48)
         base_icon = QIcon()
-        if installation.launch_method.strip().lower() == "lutris":
+        if self._should_show_lutris_tile(installation):
+            base_icon = self.exe_icon_service.cover_art_for_lutris_slug(installation.runner_target) or QIcon()
+        elif installation.launch_method.strip().lower() == "lutris":
             base_icon = self.exe_icon_service.icon_for_lutris_slug(installation.runner_target) or QIcon()
         if base_icon.isNull() and exe_path.exists():
-            base_icon = self.exe_icon_service.icon_for_executable(exe_path) or QIcon()
+            base_icon = self.exe_icon_service.icon_for_executable(exe_path, max(icon_size.width(), icon_size.height())) or QIcon()
         if base_icon.isNull() and exe_path.exists():
             base_icon = self.icon_provider.icon(QFileInfo(str(exe_path)))
         if base_icon.isNull():
@@ -715,15 +721,15 @@ class MainWindow(QMainWindow):
 
         connection_label = self._connection_badge_text(installation)
         if connection_label:
-            base_icon = self._with_connection_badge(base_icon, connection_label)
+            base_icon = self._with_connection_badge(base_icon, connection_label, icon_size)
         if installation.allow_mod_file_changes:
-            base_icon = self._with_mod_file_changes_badge(base_icon)
+            base_icon = self._with_mod_file_changes_badge(base_icon, icon_size)
         if self.hudshift_service.is_active(installation):
-            base_icon = self._with_hudshift_badge(base_icon)
+            base_icon = self._with_hudshift_badge(base_icon, icon_size)
         if installation.cheater_mode_enabled:
-            base_icon = self._with_cheat_glow(base_icon)
+            base_icon = self._with_cheat_glow(base_icon, icon_size)
         if self._is_installation_running(installation):
-            return self._with_running_badge(base_icon)
+            return self._with_running_badge(base_icon, icon_size)
         return base_icon
 
     def _current_installation(self) -> Installation | None:
@@ -765,6 +771,7 @@ class MainWindow(QMainWindow):
             self.translator,
             self.config.language,
             self.config.theme,
+            self.config.installation_display_mode,
             self,
         )
         if dialog.exec():
@@ -772,6 +779,7 @@ class MainWindow(QMainWindow):
             self.config.installations = dialog.installations
             language_changed = dialog.selected_language != self.config.language
             theme_changed = dialog.selected_theme != self.config.theme
+            display_mode_changed = dialog.selected_display_mode != self.config.installation_display_mode
             if language_changed:
                 self.config.language = dialog.selected_language
                 self.translator.set_language(self.config.language)
@@ -782,6 +790,8 @@ class MainWindow(QMainWindow):
                 app = QApplication.instance()
                 if app is not None:
                     apply_theme(app, self.config.theme)
+            if display_mode_changed:
+                self.config.installation_display_mode = dialog.selected_display_mode
             self._persist_config()
             if language_changed or theme_changed:
                 self._rebuild_translated_ui()
@@ -1396,77 +1406,88 @@ class MainWindow(QMainWindow):
     def _is_installation_running(self, installation: Installation) -> bool:
         return bool(self._process_ids_for_installation(installation))
 
-    def _with_cheat_glow(self, icon: QIcon) -> QIcon:
-        size = QSize(48, 48)
-        pixmap = icon.pixmap(size)
-        if pixmap.size() != size:
-            pixmap = pixmap.scaled(size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            padded = pixmap.__class__(size)
+    def _use_lutris_tiles(self) -> bool:
+        return sys.platform.startswith("linux") and self.config.installation_display_mode == "lutris_tiles"
+
+    def _should_show_lutris_tile(self, installation: Installation) -> bool:
+        return self._use_lutris_tiles() and installation.launch_method.strip().lower() == "lutris"
+
+    def _apply_installation_list_layout_mode(self) -> None:
+        if self._use_lutris_tiles():
+            self.installation_list.setIconSize(QSize(158, 224))
+            self.installation_list.setGridSize(QSize(188, 280))
+            self.installation_list.setSpacing(16)
+            return
+        self.installation_list.setIconSize(QSize(48, 48))
+        self.installation_list.setGridSize(QSize(190, 140))
+        self.installation_list.setSpacing(12)
+
+    def _installation_item_size_hint(self, installation: Installation) -> QSize:
+        if self._should_show_lutris_tile(installation):
+            return QSize(188, 280)
+        if self._use_lutris_tiles():
+            return QSize(188, 180)
+        return QSize(190, 140)
+
+    def _prepare_icon_pixmap(self, icon: QIcon, size: QSize | None = None) -> tuple[QSize, object]:
+        target_size = size or QSize(48, 48)
+        pixmap = icon.pixmap(target_size)
+        if pixmap.size() != target_size:
+            pixmap = pixmap.scaled(target_size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            padded = pixmap.__class__(target_size)
             padded.fill(QColor(0, 0, 0, 0))
             p = QPainter(padded)
-            x = (size.width() - pixmap.width()) // 2
-            y = (size.height() - pixmap.height()) // 2
+            x = (target_size.width() - pixmap.width()) // 2
+            y = (target_size.height() - pixmap.height()) // 2
             p.drawPixmap(x, y, pixmap)
             p.end()
             pixmap = padded
+        return target_size, pixmap
+
+    def _with_cheat_glow(self, icon: QIcon, size: QSize | None = None) -> QIcon:
+        size, pixmap = self._prepare_icon_pixmap(icon, size)
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        # Skull badge in bottom-right corner
+        diameter = min(28, max(18, round(min(size.width(), size.height()) * 0.24)))
+        x = size.width() - diameter
+        y = size.height() - diameter
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(220, 38, 38))
-        painter.drawEllipse(30, 30, 18, 18)
-        skull_font = QFont("Segoe UI Emoji", 9)
+        painter.drawEllipse(x, y, diameter, diameter)
+        skull_font = QFont("Segoe UI Emoji", max(9, diameter // 2))
         painter.setFont(skull_font)
         painter.setPen(QColor(255, 255, 255))
-        painter.drawText(30, 30, 18, 18, Qt.AlignmentFlag.AlignCenter, "\u2620")
+        painter.drawText(x, y, diameter, diameter, Qt.AlignmentFlag.AlignCenter, "\u2620")
         painter.end()
         return QIcon(pixmap)
 
-    def _with_running_badge(self, icon: QIcon) -> QIcon:
-        size = QSize(48, 48)
-        pixmap = icon.pixmap(size)
-        if pixmap.size() != size:
-            pixmap = pixmap.scaled(size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            padded = pixmap.__class__(size)
-            padded.fill(QColor(0, 0, 0, 0))
-            p = QPainter(padded)
-            x = (size.width() - pixmap.width()) // 2
-            y = (size.height() - pixmap.height()) // 2
-            p.drawPixmap(x, y, pixmap)
-            p.end()
-            pixmap = padded
+    def _with_running_badge(self, icon: QIcon, size: QSize | None = None) -> QIcon:
+        size, pixmap = self._prepare_icon_pixmap(icon, size)
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        diameter = min(24, max(14, round(min(size.width(), size.height()) * 0.18)))
+        x = size.width() - diameter - 2
+        y = size.height() - diameter - 2
         painter.setBrush(QColor("#39d353"))
         painter.setPen(QPen(QColor("#f8fafc"), 2))
-        painter.drawEllipse(32, 32, 14, 14)
+        painter.drawEllipse(x, y, diameter, diameter)
         painter.end()
         return QIcon(pixmap)
 
-    def _with_mod_file_changes_badge(self, icon: QIcon) -> QIcon:
-        size = QSize(48, 48)
-        pixmap = icon.pixmap(size)
-        if pixmap.size() != size:
-            pixmap = pixmap.scaled(size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            padded = pixmap.__class__(size)
-            padded.fill(QColor(0, 0, 0, 0))
-            p = QPainter(padded)
-            x = (size.width() - pixmap.width()) // 2
-            y = (size.height() - pixmap.height()) // 2
-            p.drawPixmap(x, y, pixmap)
-            p.end()
-            pixmap = padded
+    def _with_mod_file_changes_badge(self, icon: QIcon, size: QSize | None = None) -> QIcon:
+        size, pixmap = self._prepare_icon_pixmap(icon, size)
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        diameter = min(24, max(16, round(min(size.width(), size.height()) * 0.17)))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(245, 158, 11, 230))
-        painter.drawEllipse(2, 2, 16, 16)
+        painter.drawEllipse(2, 2, diameter, diameter)
         painter.setPen(QPen(QColor(255, 255, 255), 1.7, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawArc(5, 4, 8, 8, 45 * 16, 240 * 16)
+        painter.drawArc(2 + diameter * 3 // 16, 2 + diameter // 8, diameter // 2, diameter // 2, 45 * 16, 240 * 16)
         painter.setPen(QPen(QColor(255, 255, 255), 1.3))
         painter.setBrush(QColor(255, 255, 255))
-        painter.drawRoundedRect(6, 9, 7, 5, 1.4, 1.4)
+        painter.drawRoundedRect(2 + diameter * 4 // 16, 2 + diameter * 7 // 16, diameter * 7 // 16, diameter * 5 // 16, 1.4, 1.4)
         painter.end()
         return QIcon(pixmap)
 
@@ -1485,25 +1506,13 @@ class MainWindow(QMainWindow):
             return "Windows"
         return ""
 
-    def _with_hudshift_badge(self, icon: QIcon) -> QIcon:
-        size = QSize(48, 48)
-        pixmap = icon.pixmap(size)
-        if pixmap.size() != size:
-            pixmap = pixmap.scaled(size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            padded = pixmap.__class__(size)
-            padded.fill(QColor(0, 0, 0, 0))
-            p = QPainter(padded)
-            x = (size.width() - pixmap.width()) // 2
-            y = (size.height() - pixmap.height()) // 2
-            p.drawPixmap(x, y, pixmap)
-            p.end()
-            pixmap = padded
-
+    def _with_hudshift_badge(self, icon: QIcon, size: QSize | None = None) -> QIcon:
+        size, pixmap = self._prepare_icon_pixmap(icon, size)
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
 
         font = QFont()
-        font.setPointSize(5)
+        font.setPointSize(min(9, max(5, round(size.width() * 0.10))))
         font.setBold(True)
         painter.setFont(font)
 
@@ -1523,25 +1532,13 @@ class MainWindow(QMainWindow):
         painter.end()
         return QIcon(pixmap)
 
-    def _with_connection_badge(self, icon: QIcon, label: str) -> QIcon:
-        size = QSize(48, 48)
-        pixmap = icon.pixmap(size)
-        if pixmap.size() != size:
-            pixmap = pixmap.scaled(size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            padded = pixmap.__class__(size)
-            padded.fill(QColor(0, 0, 0, 0))
-            p = QPainter(padded)
-            x = (size.width() - pixmap.width()) // 2
-            y = (size.height() - pixmap.height()) // 2
-            p.drawPixmap(x, y, pixmap)
-            p.end()
-            pixmap = padded
-
+    def _with_connection_badge(self, icon: QIcon, label: str, size: QSize | None = None) -> QIcon:
+        size, pixmap = self._prepare_icon_pixmap(icon, size)
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
 
         font = QFont()
-        font.setPointSize(5)
+        font.setPointSize(min(8, max(5, round(size.width() * 0.08))))
         font.setBold(True)
         painter.setFont(font)
 
