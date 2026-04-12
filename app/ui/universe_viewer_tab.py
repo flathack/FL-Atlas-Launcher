@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QPushButton,
+    QSizePolicy,
     QSplitter,
     QTextBrowser,
     QVBoxLayout,
@@ -333,13 +334,14 @@ class UniverseViewerTab(QWidget):
         route_button_row.addWidget(self.find_route_button)
         route_button_row.addWidget(self.clear_route_button)
         route_layout.addLayout(route_button_row)
-        self.route_summary.setMinimumHeight(220)
-        route_layout.addWidget(self.route_summary)
+        self.route_summary.setMinimumHeight(0)
+        self.route_summary.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        route_layout.addWidget(self.route_summary, 1)
 
         left = QWidget()
         left_layout = QVBoxLayout(left)
         left_layout.addWidget(route_box)
-        left_layout.addStretch(1)
+        left_layout.setStretch(0, 1)
 
         splitter = QSplitter()
         splitter.addWidget(left)
@@ -464,22 +466,48 @@ class UniverseViewerTab(QWidget):
             self.route_summary.setText(self.tr("universe_viewer_route_hint"))
             return
         system_path = " -> ".join(self.route_result.system_names)
+        display_steps = self._compact_route_steps(self.route_result.steps)
         rows = "".join(
             "<tr>"
-            f"<td style='padding:4px 6px; color:#9fb2cf;'>{html.escape(self._segment_label(step.segment_type))}</td>"
-            f"<td style='padding:4px 6px; color:#eef4ff;'>{html.escape(step.system)}</td>"
-            f"<td style='padding:4px 6px; color:#dbeafe;'>{html.escape(step.from_label)} -> {html.escape(step.to_label)}</td>"
-            f"<td style='padding:4px 6px; text-align:right; color:#8fe1b5;'>{html.escape(_format_seconds(step.seconds))}</td>"
+            f"<td style='padding:2px 6px; color:#dce7f7; white-space:nowrap; overflow:hidden;'>"
+            f"<span style='color:#9fb2cf;'>{html.escape(self._segment_label(step.segment_type))}</span>"
+            f" <span style='color:#eef4ff;'>{html.escape(step.system)}</span>"
+            f" <span style='color:#dbeafe;'>{html.escape(step.from_label)} -> {html.escape(step.to_label)}</span>"
+            "</td>"
+            f"<td style='padding:2px 6px; text-align:right; color:#8fe1b5; white-space:nowrap;'>{html.escape(_format_seconds(step.seconds))}</td>"
             "</tr>"
-            for step in self.route_result.steps
+            for step in display_steps
         )
         self.route_summary.setHtml(
             "<div style='font-family:Segoe UI;'>"
             f"<div style='color:#8db7ff; font-size:11px; text-transform:uppercase; letter-spacing:0.08em;'>{html.escape(self.tr('universe_viewer_route_fastest'))}</div>"
             f"<div style='color:#eef4ff; font-size:18px; font-weight:700; margin:4px 0 8px 0;'>{html.escape(_format_seconds(self.route_result.total_seconds))}</div>"
-            f"<div style='color:#cbd5e1; margin-bottom:10px;'>{html.escape(system_path)}</div>"
-            f"<table cellspacing='0' cellpadding='0' style='width:100%;'>{rows}</table></div>"
+            f"<div style='color:#cbd5e1; margin-bottom:8px; white-space:nowrap; overflow:hidden;'>{html.escape(system_path)}</div>"
+            f"<table cellspacing='0' cellpadding='0' style='width:100%; table-layout:fixed; line-height:1.1;'>{rows}</table></div>"
         )
+
+    def _compact_route_steps(self, steps: list[TradeRoutePlannerStep]) -> list[TradeRoutePlannerStep]:
+        compacted: list[TradeRoutePlannerStep] = []
+        for step in steps:
+            if (
+                compacted
+                and step.segment_type == "trade_lane"
+                and compacted[-1].segment_type == "trade_lane"
+                and compacted[-1].system_nickname == step.system_nickname
+                and compacted[-1].to_label == step.from_label
+            ):
+                previous = compacted[-1]
+                compacted[-1] = TradeRoutePlannerStep(
+                    segment_type=previous.segment_type,
+                    system_nickname=previous.system_nickname,
+                    system=previous.system,
+                    from_label=previous.from_label,
+                    to_label=step.to_label,
+                    seconds=int(previous.seconds) + int(step.seconds),
+                )
+                continue
+            compacted.append(step)
+        return compacted
 
     def _refresh_scene(self) -> None:
         scene = self.view.map_scene
