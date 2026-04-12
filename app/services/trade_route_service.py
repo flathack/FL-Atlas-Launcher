@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
+import heapq
 import math
 from pathlib import Path
 
@@ -71,9 +72,28 @@ class TradeRouteTravelSegment:
 @dataclass(slots=True)
 class TradeRoutePreviewObject:
     nickname: str
+    name: str
     label: str
     archetype: str
     position: tuple[float, float]
+    object_type: str = "other"
+    goto_system: str = ""
+    base_nickname: str = ""
+    rotation_degrees: float = 0.0
+    is_route_point: bool = False
+    is_blocked_jump: bool = False
+    radius: float = 0.0
+
+
+@dataclass(slots=True)
+class TradeRouteZone:
+    nickname: str
+    zone_type: str
+    position: tuple[float, float]
+    size: tuple[float, float]
+    shape: str = "SPHERE"
+    kind: str = ""
+    damage: float = 0.0
 
 
 @dataclass(slots=True)
@@ -91,6 +111,72 @@ class TradeRoutePreviewSystem:
 class TradeRoutePreviewData:
     commodity: str
     systems: list[TradeRoutePreviewSystem]
+
+
+@dataclass(slots=True)
+class TradeRoutePlannerPoint:
+    id: str
+    system_nickname: str
+    system_name: str
+    nickname: str
+    name: str
+    label: str
+    object_type: str
+    position: tuple[float, float]
+    goto_system: str = ""
+    base_nickname: str = ""
+
+
+@dataclass(slots=True)
+class TradeRouteUniverseSystem:
+    nickname: str
+    display_name: str
+    universe_position: tuple[float, float]
+    navmap_scale: float
+    objects: list[TradeRoutePreviewObject]
+    lane_edges: list[tuple[tuple[float, float], tuple[float, float]]]
+    trade_lanes: list[list[tuple[float, float]]]
+    zones: list[TradeRouteZone]
+    map_positions: list[dict[str, object]]
+
+
+@dataclass(slots=True)
+class TradeRouteUniverseConnection:
+    from_system_nickname: str
+    to_system_nickname: str
+    connection_type: str
+
+
+@dataclass(slots=True)
+class TradeRouteUniverseData:
+    systems: list[TradeRouteUniverseSystem]
+    connections: list[TradeRouteUniverseConnection]
+    route_points: list[TradeRoutePlannerPoint]
+
+
+@dataclass(slots=True)
+class TradeRoutePlannerStep:
+    segment_type: str
+    system_nickname: str
+    system: str
+    from_label: str
+    to_label: str
+    seconds: int
+    distance: int | None = None
+
+
+@dataclass(slots=True)
+class TradeRoutePlannerResult:
+    start_point_id: str
+    end_point_id: str
+    start_label: str
+    end_label: str
+    total_seconds: int
+    system_nicknames: list[str]
+    system_names: list[str]
+    point_ids: list[str]
+    steps: list[TradeRoutePlannerStep]
+    local_paths_by_system: dict[str, list[tuple[float, float]]]
 
 
 @dataclass(slots=True)
@@ -138,6 +224,31 @@ class TradeRouteService:
     GATE_TIME_SECONDS = 10
     BUY_AND_LAUNCH_TIME_SECONDS = 15
     LAND_AND_SELL_TIME_SECONDS = 20
+    DISPLAYABLE_OBJECT_TYPES = {
+        "sun",
+        "planet",
+        "station",
+        "dock",
+        "trade_lane",
+        "jump_gate",
+        "jump_hole",
+        "depot",
+        "weapons_platform",
+        "buoy",
+        "mining",
+        "surprise",
+    }
+    ROUTE_POINT_OBJECT_TYPES = {
+        "station",
+        "dock",
+        "depot",
+        "weapons_platform",
+        "mining",
+        "surprise",
+        "planet",
+        "jump_gate",
+        "jump_hole",
+    }
 
     def __init__(self, cheat_service: CheatService) -> None:
         self.cheat_service = cheat_service
@@ -447,6 +558,211 @@ class TradeRouteService:
         self._preview_cache[preview_key] = preview_data
         return preview_data
 
+    def build_universe_map_data(self, installation: Installation) -> TradeRouteUniverseData:
+        context = self._build_trade_route_context(installation)
+        systems: list[TradeRouteUniverseSystem] = []
+        for system_nick in sorted(context.system_index):
+            system_info = context.system_index.get(system_nick, {})
+            visual_info = context.system_visual_cache.get(system_nick, self._empty_system_cache(system_nick, context.system_index))
+            systems.append(
+                TradeRouteUniverseSystem(
+                    nickname=system_nick,
+                    display_name=str(system_info.get("display_name", system_nick)),
+                    universe_position=self._coerce_point(system_info.get("universe_pos")) or (0.0, 0.0),
+                    navmap_scale=float(system_info.get("navmap_scale", 1.0) or 1.0),
+                    objects=list(visual_info.get("objects", [])),
+                    lane_edges=list(visual_info.get("lane_edges", [])),
+                    trade_lanes=list(visual_info.get("trade_lanes", [])),
+                    zones=list(visual_info.get("zones", [])),
+                    map_positions=list(system_info.get("map_positions", [])),
+                )
+            )
+
+        connection_map: dict[tuple[str, str], str] = {}
+        for system_nick, visual_info in context.system_visual_cache.items():
+            for obj in list(visual_info.get("objects", [])):
+                if not isinstance(obj, TradeRoutePreviewObject):
+                    continue
+                if obj.object_type not in {"jump_gate", "jump_hole"} or obj.is_blocked_jump or not obj.goto_system:
+                    continue
+                target_system = str(obj.goto_system).upper()
+                if target_system not in context.system_index:
+                    continue
+                edge_key = tuple(sorted((system_nick, target_system)))
+                current_type = connection_map.get(edge_key)
+                if current_type != "jump_gate":
+                    connection_map[edge_key] = "jump_gate" if obj.object_type == "jump_gate" else (current_type or "jump_hole")
+
+        route_points, _, _, _ = self._build_route_point_catalog(context)
+        connections = [
+            TradeRouteUniverseConnection(
+                from_system_nickname=from_system,
+                to_system_nickname=to_system,
+                connection_type=connection_type,
+            )
+            for (from_system, to_system), connection_type in sorted(connection_map.items())
+        ]
+        return TradeRouteUniverseData(systems=systems, connections=connections, route_points=route_points)
+
+    def find_fastest_route(
+        self,
+        installation: Installation,
+        start_point_id: str,
+        end_point_id: str,
+    ) -> TradeRoutePlannerResult | None:
+        context = self._build_trade_route_context(installation)
+        route_points, point_lookup, points_by_system, portal_links = self._build_route_point_catalog(context)
+        if not route_points:
+            return None
+        start_point = point_lookup.get(str(start_point_id))
+        end_point = point_lookup.get(str(end_point_id))
+        if start_point is None or end_point is None or start_point.id == end_point.id:
+            return None
+
+        intra_system_cache: dict[tuple[str, str, str], int | None] = {}
+
+        def intra_system_cost(first: TradeRoutePlannerPoint, second: TradeRoutePlannerPoint) -> int | None:
+            if first.system_nickname != second.system_nickname:
+                return None
+            a_id, b_id = sorted((first.id, second.id))
+            cache_key = (first.system_nickname, a_id, b_id)
+            if cache_key in intra_system_cache:
+                return intra_system_cache[cache_key]
+            system_info = context.system_visual_cache.get(first.system_nickname, {})
+            estimated = self._estimate_intra_system_time(system_info, first.position, second.position)
+            value = None if estimated is None else max(0, int(round(estimated)))
+            intra_system_cache[cache_key] = value
+            return value
+
+        distances: dict[str, int] = {start_point.id: 0}
+        previous: dict[str, str | None] = {start_point.id: None}
+        visited: set[str] = set()
+        queue: list[tuple[int, str]] = [(0, start_point.id)]
+
+        while queue:
+            current_distance, current_id = heapq.heappop(queue)
+            if current_id in visited:
+                continue
+            visited.add(current_id)
+            if current_id == end_point.id:
+                break
+            current_point = point_lookup[current_id]
+
+            for next_id in points_by_system.get(current_point.system_nickname, []):
+                if next_id == current_id:
+                    continue
+                next_point = point_lookup[next_id]
+                travel_seconds = intra_system_cost(current_point, next_point)
+                if travel_seconds is None:
+                    continue
+                candidate_distance = current_distance + travel_seconds
+                if candidate_distance < distances.get(next_id, 10**18):
+                    distances[next_id] = candidate_distance
+                    previous[next_id] = current_id
+                    heapq.heappush(queue, (candidate_distance, next_id))
+
+            for next_id in portal_links.get(current_id, []):
+                candidate_distance = current_distance + self.GATE_TIME_SECONDS
+                if candidate_distance < distances.get(next_id, 10**18):
+                    distances[next_id] = candidate_distance
+                    previous[next_id] = current_id
+                    heapq.heappush(queue, (candidate_distance, next_id))
+
+        if end_point.id not in previous:
+            return None
+
+        point_ids: list[str] = []
+        current_id: str | None = end_point.id
+        while current_id is not None:
+            point_ids.append(current_id)
+            current_id = previous.get(current_id)
+        point_ids.reverse()
+
+        steps: list[TradeRoutePlannerStep] = []
+        local_paths_by_system: dict[str, list[tuple[float, float]]] = {}
+        system_nicknames: list[str] = []
+        system_names: list[str] = []
+        for point_id in point_ids:
+            point = point_lookup[point_id]
+            if not system_nicknames or system_nicknames[-1] != point.system_nickname:
+                system_nicknames.append(point.system_nickname)
+                system_names.append(point.system_name)
+
+        def append_local_path(system_nick: str, points: list[tuple[float, float]]) -> None:
+            if not points:
+                return
+            bucket = local_paths_by_system.setdefault(system_nick, [])
+            for point in points:
+                if not bucket or bucket[-1] != point:
+                    bucket.append(point)
+
+        for first_id, second_id in zip(point_ids, point_ids[1:]):
+            first = point_lookup[first_id]
+            second = point_lookup[second_id]
+            if first.system_nickname == second.system_nickname:
+                system_info = context.system_visual_cache.get(first.system_nickname, {})
+                segment_defs, _ = self._build_intra_system_segments(
+                    system_nick=first.system_nickname,
+                    system_info=system_info,
+                    start_pt=first.position,
+                    end_pt=second.position,
+                    context=context,
+                )
+                local_path = self._trade_route_local_path(system_info, first.position, second.position)
+                append_local_path(first.system_nickname, local_path)
+                if segment_defs:
+                    for segment in segment_defs:
+                        steps.append(
+                            TradeRoutePlannerStep(
+                                segment_type=segment.segment_type,
+                                system_nickname=segment.system_nickname,
+                                system=segment.system,
+                                from_label=first.label,
+                                to_label=second.label,
+                                seconds=segment.seconds,
+                                distance=segment.distance,
+                            )
+                        )
+                else:
+                    steps.append(
+                        TradeRoutePlannerStep(
+                            segment_type="open_space",
+                            system_nickname=first.system_nickname,
+                            system=first.system_name,
+                            from_label=first.label,
+                            to_label=second.label,
+                            seconds=0,
+                            distance=0,
+                        )
+                    )
+                continue
+
+            steps.append(
+                TradeRoutePlannerStep(
+                    segment_type="jump",
+                    system_nickname=first.system_nickname,
+                    system=first.system_name,
+                    from_label=first.label,
+                    to_label=second.label,
+                    seconds=self.GATE_TIME_SECONDS,
+                )
+            )
+            append_local_path(first.system_nickname, [first.position])
+            append_local_path(second.system_nickname, [second.position])
+
+        return TradeRoutePlannerResult(
+            start_point_id=start_point.id,
+            end_point_id=end_point.id,
+            start_label=start_point.label,
+            end_label=end_point.label,
+            total_seconds=int(distances.get(end_point.id, 0)),
+            system_nicknames=system_nicknames,
+            system_names=system_names,
+            point_ids=point_ids,
+            steps=steps,
+            local_paths_by_system=local_paths_by_system,
+        )
+
     def _build_trade_route_context(self, installation: Installation) -> TradeRouteContext:
         cached = self._context_cache.get(installation.id)
         if cached is not None:
@@ -466,7 +782,7 @@ class TradeRouteService:
         adjacency = self._build_system_adjacency(layout.universe_file, locked_gate_hashes)
         market_entries = self._extract_market_entries(layout.market_files, base_index, commodity_prices)
         market_entries = self._add_implicit_base_price_sinks(market_entries, base_index, commodity_prices)
-        system_visual_cache = self._build_system_visual_cache(layout, system_index, base_index)
+        system_visual_cache = self._build_system_visual_cache(layout, system_index, base_index, resource_dlls, locked_gate_hashes)
         context = TradeRouteContext(
             layout=layout,
             commodity_prices=commodity_prices,
@@ -1236,6 +1552,7 @@ class TradeRouteService:
     def _build_system_index(self, universe_file: Path | None, resource_dlls: list[Path]) -> dict[str, dict[str, object]]:
         if universe_file is None or not universe_file.exists():
             return {}
+        map_positions = self._parse_multiuniverse_positions(universe_file.parent)
         result: dict[str, dict[str, object]] = {}
         for section_name, entries in self._parse_ini_file(universe_file):
             if section_name.lower() != "system":
@@ -1244,6 +1561,18 @@ class TradeRouteService:
             nickname = values.get("nickname", "").strip().upper()
             if not nickname:
                 continue
+            pos_values = [part.strip() for part in str(values.get("pos", "0,0")).split(",")]
+            try:
+                universe_pos = (
+                    float(pos_values[0]) if pos_values and pos_values[0] else 0.0,
+                    float(pos_values[1]) if len(pos_values) > 1 and pos_values[1] else 0.0,
+                )
+            except ValueError:
+                universe_pos = (0.0, 0.0)
+            try:
+                navmap_scale = float(str(values.get("navmapscale", "1") or "1").strip() or "1")
+            except ValueError:
+                navmap_scale = 1.0
             display_name = self.cheat_service._resolve_ids_name(
                 self.cheat_service._parse_int(values.get("ids_name") or values.get("strid_name")),
                 resource_dlls,
@@ -1252,6 +1581,9 @@ class TradeRouteService:
                 "nickname": nickname,
                 "display_name": display_name or nickname,
                 "file": values.get("file", ""),
+                "universe_pos": universe_pos,
+                "navmap_scale": navmap_scale if navmap_scale > 0 else 1.0,
+                "map_positions": map_positions.get(nickname, []),
             }
         return result
 
@@ -1419,9 +1751,13 @@ class TradeRouteService:
         layout: InstallationLayout,
         system_index: dict[str, dict[str, object]],
         base_index: dict[str, dict[str, object]],
+        resource_dlls: list[Path],
+        locked_gate_hashes: set[int] | None = None,
     ) -> dict[str, dict[str, object]]:
         result: dict[str, dict[str, object]] = {}
         universe_root = layout.universe_file.parent if layout.universe_file is not None else None
+        locked = locked_gate_hashes or set()
+        solar_meta = self._load_solar_meta(layout.universe_file.parent.parent if layout.universe_file is not None else None)
         for system_nick, system_info in system_index.items():
             relative_path = str(system_info.get("file", "")).strip()
             if not relative_path or universe_root is None:
@@ -1436,45 +1772,162 @@ class TradeRouteService:
             jump_links: dict[str, list[tuple[float, float]]] = {}
             lane_map: dict[str, tuple[float, float]] = {}
             lane_next: list[tuple[str, str]] = []
+            trade_lanes: list[list[tuple[float, float]]] = []
+            zones_raw: dict[str, dict[str, object]] = {}
+            nebula_zones: set[str] = set()
+            asteroid_zones: set[str] = set()
             for section_name, entries in self._parse_ini_file(system_file):
-                if section_name.lower() != "object":
-                    continue
-                values = {key.lower(): value for key, value in entries}
-                nickname = str(values.get("nickname", "")).strip()
-                archetype = str(values.get("archetype", "")).strip().lower()
-                position = self._parse_2d_position(values.get("pos", "0,0,0"))
-                label = nickname
+                section_lower = section_name.lower()
+                if section_lower == "object":
+                    values = {key.lower(): value for key, value in entries}
+                    nickname = str(values.get("nickname", "")).strip()
+                    archetype = str(values.get("archetype", "")).strip().lower()
+                    position = self._parse_2d_position(values.get("pos", "0,0,0"))
+                    object_type = self._classify_visual_object(archetype, values)
+                    if not self._is_displayable_visual_object(object_type, archetype, values, position):
+                        continue
 
-                base_nick = str(values.get("base") or values.get("dock_with") or "").strip().lower()
-                if base_nick and base_nick in base_index:
-                    label = str(base_index[base_nick].get("display_name") or nickname)
-                    base_index[base_nick]["pos"] = position
+                    label = nickname
+                    ids_name_value = values.get("ids_name") or values.get("strid_name")
+                    if ids_name_value:
+                        resolved_name = self.cheat_service._resolve_ids_name(
+                            self.cheat_service._parse_int(ids_name_value),
+                            resource_dlls,
+                        )
+                    else:
+                        resolved_name = ""
 
-                goto_value = str(values.get("goto", "")).strip()
-                if goto_value:
-                    destination_system = goto_value.split(",", 1)[0].strip().upper()
-                    if destination_system:
-                        jump_links.setdefault(destination_system, []).append(position)
+                    base_nick = str(values.get("base") or values.get("dock_with") or "").strip().lower()
+                    if base_nick and base_nick in base_index:
+                        label = str(base_index[base_nick].get("display_name") or nickname)
+                        base_index[base_nick]["pos"] = position
+                    elif resolved_name:
+                        label = resolved_name
+                    goto_value = str(values.get("goto", "")).strip()
+                    goto_system = ""
+                    if goto_value:
+                        destination_system = goto_value.split(",", 1)[0].strip().upper()
+                        if destination_system:
+                            goto_system = destination_system
+                            jump_links.setdefault(destination_system, []).append(position)
 
-                if "trade_lane_ring" in archetype or "tradelane_ring" in archetype:
-                    lane_map[nickname.lower()] = position
-                    next_ring = str(values.get("next_ring", "")).strip().lower()
-                    if next_ring:
-                        lane_next.append((nickname.lower(), next_ring))
+                    if object_type == "trade_lane":
+                        lane_map[nickname.lower()] = position
+                        next_ring = str(values.get("next_ring", "")).strip().lower()
+                        if next_ring:
+                            lane_next.append((nickname.lower(), next_ring))
 
-                objects.append(
-                    TradeRoutePreviewObject(
-                        nickname=nickname,
-                        label=label,
-                        archetype=archetype,
-                        position=position,
+                    solar_info = solar_meta.get(archetype, {})
+                    radius = self._parse_float_value(solar_info.get("radius"), 0.0)
+                    is_blocked_jump = bool(nickname) and self._fl_hash_nickname(nickname) in locked
+                    objects.append(
+                        TradeRoutePreviewObject(
+                            nickname=nickname,
+                            name=label or nickname,
+                            label=label or nickname,
+                            archetype=archetype,
+                            position=position,
+                            object_type=object_type,
+                            goto_system=goto_system,
+                            base_nickname=base_nick,
+                            rotation_degrees=self._parse_float_value(values.get("rotate"), 0.0),
+                            is_route_point=object_type in self.ROUTE_POINT_OBJECT_TYPES,
+                            is_blocked_jump=is_blocked_jump,
+                            radius=radius,
+                        )
                     )
-                )
+                    continue
+
+                if section_lower == "zone":
+                    values = {key.lower(): value for key, value in entries}
+                    nickname = str(values.get("nickname", "")).strip()
+                    if not nickname:
+                        continue
+                    position = self._parse_2d_position(values.get("pos", "0,0,0"))
+                    size = self._parse_zone_size(values.get("size", "0"))
+                    zones_raw[nickname] = {
+                        "position": position,
+                        "size": size,
+                        "shape": str(values.get("shape", "SPHERE")).strip().upper(),
+                        "damage": self._parse_float_value(values.get("damage"), 0.0),
+                    }
+                    continue
+
+                if section_lower == "nebula":
+                    for key, value in entries:
+                        if key.lower() == "zone":
+                            nebula_zones.add(value.strip())
+                    continue
+
+                if section_lower == "asteroids":
+                    for key, value in entries:
+                        if key.lower() == "zone":
+                            asteroid_zones.add(value.strip())
+                    continue
 
             lane_edges: list[tuple[tuple[float, float], tuple[float, float]]] = []
             for start_key, next_key in lane_next:
                 if start_key in lane_map and next_key in lane_map:
                     lane_edges.append((lane_map[start_key], lane_map[next_key]))
+            visited_lane_nodes: set[str] = set()
+            for nickname, position in lane_map.items():
+                if nickname in visited_lane_nodes:
+                    continue
+                current = nickname
+                previous_lookup = {next_key: start_key for start_key, next_key in lane_next}
+                while current in previous_lookup and previous_lookup[current] in lane_map and previous_lookup[current] not in visited_lane_nodes:
+                    current = previous_lookup[current]
+                chain: list[tuple[float, float]] = []
+                while current in lane_map and current not in visited_lane_nodes:
+                    visited_lane_nodes.add(current)
+                    chain.append(lane_map[current])
+                    next_match = next((next_key for start_key, next_key in lane_next if start_key == current), "")
+                    if not next_match:
+                        break
+                    current = next_match
+                if len(chain) >= 2:
+                    trade_lanes.append(chain)
+
+            zones: list[TradeRouteZone] = []
+            for zone_nick in sorted(nebula_zones):
+                info = zones_raw.get(zone_nick)
+                if info:
+                    zones.append(
+                        TradeRouteZone(
+                            nickname=zone_nick,
+                            zone_type="nebula",
+                            position=tuple(info["position"]),
+                            size=tuple(info["size"]),
+                            shape=str(info["shape"]),
+                        )
+                    )
+            for zone_nick in sorted(asteroid_zones):
+                info = zones_raw.get(zone_nick)
+                if info:
+                    zones.append(
+                        TradeRouteZone(
+                            nickname=zone_nick,
+                            zone_type="asteroid_field",
+                            position=tuple(info["position"]),
+                            size=tuple(info["size"]),
+                            shape=str(info["shape"]),
+                        )
+                    )
+            for zone_nick, info in zones_raw.items():
+                damage = float(info.get("damage", 0.0) or 0.0)
+                if damage <= 0:
+                    continue
+                zones.append(
+                    TradeRouteZone(
+                        nickname=zone_nick,
+                        zone_type="death_zone",
+                        kind="sun_death" if "sun" in zone_nick.lower() else "death",
+                        position=tuple(info["position"]),
+                        size=tuple(info["size"]),
+                        shape=str(info["shape"]),
+                        damage=damage,
+                    )
+                )
 
             result[system_nick] = {
                 "nickname": system_nick,
@@ -1482,6 +1935,8 @@ class TradeRouteService:
                 "objects": objects,
                 "jump_links": jump_links,
                 "lane_edges": lane_edges,
+                "trade_lanes": trade_lanes,
+                "zones": zones,
             }
         return result
 
@@ -1492,7 +1947,192 @@ class TradeRouteService:
             "objects": [],
             "jump_links": {},
             "lane_edges": [],
+            "trade_lanes": [],
+            "zones": [],
         }
+
+    def _build_route_point_catalog(
+        self,
+        context: TradeRouteContext,
+    ) -> tuple[
+        list[TradeRoutePlannerPoint],
+        dict[str, TradeRoutePlannerPoint],
+        dict[str, list[str]],
+        dict[str, list[str]],
+    ]:
+        points: list[TradeRoutePlannerPoint] = []
+        point_lookup: dict[str, TradeRoutePlannerPoint] = {}
+        points_by_system: dict[str, list[str]] = {}
+        portal_ids_by_system: dict[str, list[str]] = {}
+
+        for system_nick in sorted(context.system_visual_cache):
+            system_info = context.system_visual_cache.get(system_nick, {})
+            system_name = str(context.system_index.get(system_nick, {}).get("display_name", system_nick))
+            for obj in list(system_info.get("objects", [])):
+                if not isinstance(obj, TradeRoutePreviewObject) or not obj.is_route_point:
+                    continue
+                point_id = f"{system_nick}|{obj.nickname}"
+                point = TradeRoutePlannerPoint(
+                    id=point_id,
+                    system_nickname=system_nick,
+                    system_name=system_name,
+                    nickname=obj.nickname,
+                    name=obj.label or obj.nickname,
+                    label="",
+                    object_type=obj.object_type,
+                    position=obj.position,
+                    goto_system=obj.goto_system,
+                    base_nickname=obj.base_nickname,
+                )
+                points.append(point)
+                point_lookup[point.id] = point
+                points_by_system.setdefault(system_nick, []).append(point.id)
+                if obj.object_type in {"jump_gate", "jump_hole"} and not obj.is_blocked_jump and obj.goto_system:
+                    portal_ids_by_system.setdefault(system_nick, []).append(point.id)
+
+        label_counts: dict[str, int] = {}
+        for point in points:
+            base_label = f"{point.system_name} - {point.name} [{self._planner_type_label(point.object_type)}]"
+            label_counts[base_label] = label_counts.get(base_label, 0) + 1
+            point.label = base_label
+
+        for point in points:
+            if label_counts.get(point.label, 0) > 1:
+                point.label = f"{point.label} - {point.nickname}"
+
+        portal_links: dict[str, list[str]] = {}
+        for system_nick, portal_ids in portal_ids_by_system.items():
+            for portal_id in portal_ids:
+                portal = point_lookup[portal_id]
+                candidates = [
+                    point_lookup[target_id]
+                    for target_id in portal_ids_by_system.get(str(portal.goto_system).upper(), [])
+                    if point_lookup[target_id].goto_system == system_nick
+                ]
+                if not candidates:
+                    candidates = [
+                        point_lookup[target_id]
+                        for target_id in portal_ids_by_system.get(str(portal.goto_system).upper(), [])
+                    ]
+                candidates.sort(key=lambda item: (0 if item.object_type == portal.object_type else 1, item.label.lower()))
+                portal_links[portal_id] = [item.id for item in candidates]
+
+        points.sort(key=lambda item: item.label.lower())
+        return points, point_lookup, points_by_system, portal_links
+
+    def _parse_multiuniverse_positions(self, universe_dir: Path) -> dict[str, list[dict[str, object]]]:
+        multi_file = universe_dir / "multiuniverse.ini"
+        if not multi_file.exists():
+            return {}
+        positions_by_system: dict[str, list[dict[str, object]]] = {}
+        for section_name, entries in self._parse_ini_file(multi_file):
+            if section_name.lower() != "sector":
+                continue
+            mapping = ""
+            for key, value in entries:
+                if key.lower() == "mapping":
+                    mapping = value.split(",", 1)[0].strip()
+                    break
+            if not mapping:
+                continue
+            label_ids: list[str] = []
+            for key, value in entries:
+                if key.lower() != "label":
+                    continue
+                label_id = value.split(",", 1)[0].strip()
+                if label_id and label_id not in label_ids:
+                    label_ids.append(label_id)
+            for key, value in entries:
+                if key.lower() != "system":
+                    continue
+                parts = [part.strip() for part in value.split(",")]
+                if len(parts) < 3:
+                    continue
+                try:
+                    positions_by_system.setdefault(parts[0].upper(), []).append(
+                        {"map": mapping, "pos": (float(parts[1]), float(parts[2])), "label_ids": list(label_ids)}
+                    )
+                except ValueError:
+                    continue
+        return positions_by_system
+
+    def _classify_visual_object(self, archetype: str, values: dict[str, str]) -> str:
+        arch = str(archetype or "").lower()
+        if values.get("prev_ring") or values.get("next_ring"):
+            return "trade_lane"
+        if values.get("goto"):
+            if "hole" in arch:
+                return "jump_hole"
+            return "jump_gate"
+        if "sun" in arch or "star" in arch:
+            return "sun"
+        if "planet" in arch or "moon" in arch:
+            return "planet"
+        if "jumpgate" in arch or ("gate" in arch and "hole" not in arch):
+            return "jump_gate"
+        if "jumphole" in arch or "jump_hole" in arch:
+            return "jump_hole"
+        if "station" in arch or "base" in arch or "dreadnought" in arch or "battleship" in arch:
+            return "station"
+        if "dock_ring" in arch or "docking_fixture" in arch:
+            return "dock"
+        if "trade_lane" in arch:
+            return "trade_lane"
+        if "buoy" in arch or "bouy" in arch:
+            return "buoy"
+        if "depot" in arch:
+            return "depot"
+        if "weapons_platform" in arch:
+            return "weapons_platform"
+        if "mining" in arch:
+            return "mining"
+        if "surprise" in arch or "suprise" in arch:
+            return "surprise"
+        return "other"
+
+    def _is_displayable_visual_object(
+        self,
+        object_type: str,
+        archetype: str,
+        values: dict[str, str],
+        position: tuple[float, float],
+    ) -> bool:
+        if object_type not in self.DISPLAYABLE_OBJECT_TYPES:
+            return False
+        nickname = str(values.get("nickname", "")).strip().lower()
+        arch = str(archetype or "").strip().lower()
+        dock_with = str(values.get("dock_with", "")).strip().lower()
+        base = str(values.get("base", "")).strip().lower()
+        if "beam_target" in nickname and max(abs(position[0]), abs(position[1])) >= 900000:
+            return False
+        is_jump_object = object_type == "jump_hole"
+        is_self_linked = bool(nickname) and (dock_with == nickname or base == nickname)
+        if is_jump_object and is_self_linked and max(abs(position[0]), abs(position[1])) >= 900000:
+            return False
+        return True
+
+    def _planner_type_label(self, object_type: str) -> str:
+        labels = {
+            "sun": "Sun",
+            "planet": "Planet",
+            "station": "Station",
+            "dock": "Dock",
+            "trade_lane": "Trade Lane",
+            "jump_gate": "Jump Gate",
+            "jump_hole": "Jump Hole",
+            "depot": "Depot",
+            "weapons_platform": "Weapons Platform",
+            "buoy": "Buoy",
+            "mining": "Mining",
+            "surprise": "Surprise",
+        }
+        return labels.get(object_type, object_type.replace("_", " ").title())
+
+    def _parse_float_value(self, raw_value: object, default: float = 0.0) -> float:
+        try:
+            return float(str(raw_value or "").strip())
+        except ValueError:
+            return default
 
     def _coerce_point(self, value: object) -> tuple[float, float] | None:
         if isinstance(value, tuple) and len(value) >= 2:
@@ -1507,6 +2147,38 @@ class TradeRouteService:
             return (float(parts[0]), float(parts[2]))
         except ValueError:
             return (0.0, 0.0)
+
+    def _parse_zone_size(self, raw_value: object) -> tuple[float, float]:
+        parts = [part.strip() for part in str(raw_value or "0").split(",")]
+        try:
+            sx = float(parts[0]) if parts and parts[0] else 0.0
+            sz = float(parts[2]) if len(parts) > 2 and parts[2] else sx
+            return (sx, sz)
+        except ValueError:
+            return (0.0, 0.0)
+
+    def _load_solar_meta(self, data_dir: Path | None) -> dict[str, dict[str, object]]:
+        if data_dir is None:
+            return {}
+        solararch = data_dir / "SOLAR" / "solararch.ini"
+        if not solararch.exists():
+            return {}
+        result: dict[str, dict[str, object]] = {}
+        for section_name, entries in self._parse_ini_file(solararch):
+            if section_name.lower() != "solar":
+                continue
+            values = {key.lower(): value for key, value in entries}
+            nickname = str(values.get("nickname", "")).strip().lower()
+            if not nickname:
+                continue
+            radius = self._parse_float_value(values.get("solar_radius") or values.get("radius"), 0.0)
+            result[nickname] = {
+                "radius": radius,
+                "type": str(values.get("type", "")).strip().lower(),
+                "shape": str(values.get("shape_name", "")).strip().lower(),
+                "da_archetype": str(values.get("da_archetype", "")).strip().lower(),
+            }
+        return result
 
     def _pick_jump_point(
         self,

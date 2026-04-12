@@ -227,6 +227,11 @@ class MainWindow(QMainWindow):
         self.ship_info_action.triggered.connect(self._open_ship_info_dialog)
         toolbar.addAction(self.ship_info_action)
 
+        self.universe_view_action = QAction(self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon), self.tr("universe_viewer_open"), self)
+        self.universe_view_action.setToolTip(self.tr("universe_viewer_open"))
+        self.universe_view_action.triggered.connect(self._open_universe_view_dialog)
+        toolbar.addAction(self.universe_view_action)
+
         self.trade_routes_action = QAction(self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogContentsView), self.tr("trade_routes_open"), self)
         self.trade_routes_action.setToolTip(self.tr("trade_routes_open"))
         self.trade_routes_action.triggered.connect(self._open_trade_routes_dialog)
@@ -1896,6 +1901,12 @@ class MainWindow(QMainWindow):
         dialog.exec()
 
     def _open_trade_routes_dialog(self) -> None:
+        self._open_trade_route_window(initial_tab=1)
+
+    def _open_universe_view_dialog(self) -> None:
+        self._open_trade_route_window(initial_tab=3)
+
+    def _open_trade_route_window(self, *, initial_tab: int) -> None:
         installation = self._current_installation()
         if installation is None:
             return
@@ -1908,6 +1919,7 @@ class MainWindow(QMainWindow):
                 selected_ship=self.config.selected_ships.get(installation.id, ""),
                 cheat_service=self._get_cheat_service(),
                 ship_render_service=self._get_ship_render_service(),
+                initial_tab=initial_tab,
                 parent=self,
             )
         except OSError as error:

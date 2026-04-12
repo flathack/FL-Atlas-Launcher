@@ -40,6 +40,7 @@ from app.ui.ship_handling_dialog import _IconLoaderWorker
 from app.ui.ship_preview_dialog import ShipPreviewDialog
 from app.ui.trade_route_preview_dialog import TradeRoutePreviewDialog
 from app.ui.trade_route_round_trip_detail_dialog import TradeRouteRoundTripDetailDialog
+from app.ui.universe_viewer_tab import UniverseViewerTab
 
 
 _MAX_TABLE_TEXT_LENGTH = 30
@@ -1371,6 +1372,7 @@ class TradeRouteTabbedDialog(QDialog):
         self._inner_tab = _InnerSystemTab(installation, trade_route_service, translator, reputation, selected_ship, parent=self, **tab_kwargs)
         self._routes_tab = _TradeRoutesTab(installation, trade_route_service, translator, reputation, selected_ship, parent=self, **tab_kwargs)
         self._round_trip_tab = _RoundTripTab(installation, trade_route_service, translator, reputation, selected_ship, parent=self, **tab_kwargs)
+        self._universe_tab = UniverseViewerTab(installation, trade_route_service, translator, parent=self)
 
         self._inner_tab.ship_changed.connect(self._on_ship_changed)
         self._routes_tab.ship_changed.connect(self._on_ship_changed)
@@ -1379,6 +1381,7 @@ class TradeRouteTabbedDialog(QDialog):
         self.tabs.addTab(self._inner_tab, translator.text("trade_inner_system_open"))
         self.tabs.addTab(self._routes_tab, translator.text("trade_routes_open"))
         self.tabs.addTab(self._round_trip_tab, translator.text("trade_round_trip_open"))
+        self.tabs.addTab(self._universe_tab, translator.text("trade_universe_open"))
 
         self.button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         self.button_box.rejected.connect(self.close)
@@ -1387,13 +1390,13 @@ class TradeRouteTabbedDialog(QDialog):
         root.addWidget(self.tabs, 1)
         root.addWidget(self.button_box)
 
-        self.tabs.setCurrentIndex(max(0, min(initial_tab, 2)))
+        self.tabs.setCurrentIndex(max(0, min(initial_tab, 3)))
         self.tabs.currentChanged.connect(self._on_tab_changed)
         # Start only the initially visible tab
         self._on_tab_changed(self.tabs.currentIndex())
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        for tab in (self._inner_tab, self._routes_tab, self._round_trip_tab):
+        for tab in (self._inner_tab, self._routes_tab, self._round_trip_tab, self._universe_tab):
             try:
                 tab.shutdown()
             except RuntimeError:
