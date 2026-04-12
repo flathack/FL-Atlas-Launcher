@@ -56,6 +56,7 @@ from app.services.resolution_service import ResolutionService
 from app.services.hudshift_service import HudShiftService
 from app.services.ship_render_service import ShipRenderService
 from app.services.trade_route_service import TradeRouteService
+from app.services.update_service import UpdateService
 from app.ui.mpid_dialog import MpidDialog
 from app.ui.reputation_dialog import ReputationDialog
 from app.ui.ship_handling_dialog import ShipHandlingDialog, ShipInfoDialog
@@ -79,6 +80,7 @@ class MainWindow(QMainWindow):
     SYNC_POLL_INTERVAL_MS = 15000
     PROCESS_POLL_INTERVAL_MS = 2500
     HELP_WIKI_URL = "https://github.com/flathack/FL-Atlas-Launcher/wiki"
+    RELEASES_URL = UpdateService.RELEASES_URL
     WEB_TOOLS_URL = "https://flathack.github.io/"
 
     def __init__(self, config_service: ConfigService, app_version: str, *, show_cheat_features: bool = True) -> None:
@@ -198,6 +200,8 @@ class MainWindow(QMainWindow):
         help_menu = QMenu(self.help_button)
         help_web_tools_action = help_menu.addAction(self.tr("help_open_web_tools"))
         help_web_tools_action.triggered.connect(self._open_web_tools)
+        help_update_action = help_menu.addAction(self.tr("help_check_updates"))
+        help_update_action.triggered.connect(self._check_for_updates)
         help_discord_action = help_menu.addAction(self.tr("help_open_discord"))
         help_discord_action.triggered.connect(self._open_help_discord)
         help_wiki_action = help_menu.addAction(self.tr("help_open_wiki"))
@@ -715,7 +719,13 @@ class MainWindow(QMainWindow):
         exe_path = self.launcher_service.resolve_executable_path(installation)
         icon_size = self.installation_list.iconSize() if hasattr(self, "installation_list") else QSize(48, 48)
         base_icon = QIcon()
-        if self._should_show_lutris_tile(installation):
+        if self._should_show_cover_tile(installation):
+            cover_path = Path(installation.cover_image_path).expanduser()
+            base_icon = self.exe_icon_service.icon_for_cover_image(
+                cover_path,
+                max(icon_size.width(), icon_size.height()),
+            ) or QIcon()
+        elif self._should_show_lutris_tile(installation):
             base_icon = self.exe_icon_service.cover_art_for_lutris_slug(installation.runner_target) or QIcon()
         elif installation.launch_method.strip().lower() == "lutris":
             base_icon = self.exe_icon_service.icon_for_lutris_slug(installation.runner_target) or QIcon()
@@ -1416,11 +1426,20 @@ class MainWindow(QMainWindow):
     def _use_lutris_tiles(self) -> bool:
         return sys.platform.startswith("linux") and self.config.installation_display_mode == "lutris_tiles"
 
+    def _use_cover_tiles(self) -> bool:
+        return self.config.installation_display_mode == "cover_tiles"
+
+    def _use_tile_layout(self) -> bool:
+        return self._use_cover_tiles() or self._use_lutris_tiles()
+
     def _should_show_lutris_tile(self, installation: Installation) -> bool:
         return self._use_lutris_tiles() and installation.launch_method.strip().lower() == "lutris"
 
+    def _should_show_cover_tile(self, installation: Installation) -> bool:
+        return self._use_cover_tiles() and bool(installation.cover_image_path.strip())
+
     def _apply_installation_list_layout_mode(self) -> None:
-        if self._use_lutris_tiles():
+        if self._use_tile_layout():
             self.installation_list.setIconSize(QSize(158, 224))
             self.installation_list.setGridSize(QSize(188, 280))
             self.installation_list.setSpacing(16)
@@ -1430,6 +1449,8 @@ class MainWindow(QMainWindow):
         self.installation_list.setSpacing(12)
 
     def _installation_item_size_hint(self, installation: Installation) -> QSize:
+        if self._use_cover_tiles():
+            return QSize(188, 280)
         if self._should_show_lutris_tile(installation):
             return QSize(188, 280)
         if self._use_lutris_tiles():
@@ -2009,3 +2030,33 @@ class MainWindow(QMainWindow):
         discord_url = self.remote_link_service.discord_invite_url()
         self.logger.info("Opening Discord URL: %s", discord_url)
         QDesktopServices.openUrl(QUrl(discord_url))
+
+    def _check_for_updates(self) -> None:
+        status = UpdateService().get_release_status(self.app_version)
+        if status is None:
+            QMessageBox.warning(
+                self,
+                self.tr("update_check_title"),
+                self.tr("update_check_failed_message"),
+            )
+            return
+
+        release_url = str(status.get("html_url") or self.RELEASES_URL)
+        latest_version = str(status.get("latest_version") or "-")
+        if bool(status.get("update_available")):
+            answer = QMessageBox.information(
+                self,
+                self.tr("update_check_title"),
+                self.tr("update_available_message", current=self.app_version, latest=latest_version),
+                QMessageBox.StandardButton.Open | QMessageBox.StandardButton.Close,
+                QMessageBox.StandardButton.Open,
+            )
+            if answer == QMessageBox.StandardButton.Open:
+                QDesktopServices.openUrl(QUrl(release_url))
+            return
+
+        QMessageBox.information(
+            self,
+            self.tr("update_check_title"),
+            self.tr("update_up_to_date_message", current=self.app_version, latest=latest_version),
+        )

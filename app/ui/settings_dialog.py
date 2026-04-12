@@ -77,6 +77,7 @@ class SettingsDialog(QDialog):
         self.name_edit = QLineEdit()
         self.exe_path_edit = QLineEdit()
         self.perf_path_edit = QLineEdit()
+        self.cover_path_edit = QLineEdit()
         self.launch_method_combo = QComboBox()
         self.prefix_path_edit = QLineEdit()
         self.runner_target_edit = QLineEdit()
@@ -91,6 +92,8 @@ class SettingsDialog(QDialog):
         self.detect_bottles_button = QPushButton(self.tr("detect_bottles"))
         self.detect_lutris_button = QPushButton(self.tr("detect_lutris"))
         self.browse_perf_button = QPushButton(self.tr("choose_perf"))
+        self.browse_cover_button = QPushButton(self.tr("choose_cover"))
+        self.clear_cover_button = QPushButton(self.tr("clear_cover"))
         self.browse_prefix_button = QPushButton(self.tr("choose_prefix"))
 
         self.language_combo = QComboBox()
@@ -106,7 +109,9 @@ class SettingsDialog(QDialog):
         self.theme_combo.setCurrentIndex(max(0, self.theme_combo.findData(self._current_theme)))
 
         self.launcher_view_combo = QComboBox()
-        self.launcher_view_combo.addItem(self.tr("launcher_view_lutris_tiles"), "lutris_tiles")
+        if sys.platform.startswith("linux"):
+            self.launcher_view_combo.addItem(self.tr("launcher_view_lutris_tiles"), "lutris_tiles")
+        self.launcher_view_combo.addItem(self.tr("launcher_view_cover_tiles"), "cover_tiles")
         self.launcher_view_combo.addItem(self.tr("launcher_view_icons"), "icons")
         self.launcher_view_combo.setCurrentIndex(max(0, self.launcher_view_combo.findData(self._current_display_mode)))
 
@@ -178,6 +183,7 @@ class SettingsDialog(QDialog):
         self.runner_target_label = QLabel(self.tr("runner_target"))
         self.launch_arguments_label = QLabel(self.tr("launch_arguments"))
         self.perf_label = QLabel("PerfOptions.ini")
+        self.cover_label = QLabel(self.tr("cover_image"))
 
         form_layout.addRow(self.name_label, self.name_edit)
         for method in self.LAUNCH_METHODS:
@@ -198,6 +204,10 @@ class SettingsDialog(QDialog):
         form_layout.addRow(
             self.perf_label,
             self._with_button(self.perf_path_edit, self.browse_perf_button),
+        )
+        form_layout.addRow(
+            self.cover_label,
+            self._with_buttons(self.cover_path_edit, self.browse_cover_button, self.clear_cover_button),
         )
         editor_layout.addLayout(form_layout)
         editor_layout.addWidget(self.method_help_label)
@@ -220,8 +230,7 @@ class SettingsDialog(QDialog):
         general_layout.setVerticalSpacing(16)
         general_layout.addRow(self.tr("language"), self.language_combo)
         general_layout.addRow(self.tr("settings_theme"), self.theme_combo)
-        if sys.platform.startswith("linux"):
-            general_layout.addRow(self.tr("settings_launcher_view"), self.launcher_view_combo)
+        general_layout.addRow(self.tr("settings_launcher_view"), self.launcher_view_combo)
 
         tabs.addTab(general_tab, self.tr("settings_general"))
 
@@ -270,6 +279,7 @@ class SettingsDialog(QDialog):
         self.runner_target_edit.textEdited.connect(self._save_form_to_current_item)
         self.launch_arguments_edit.textEdited.connect(self._save_form_to_current_item)
         self.perf_path_edit.textEdited.connect(self._save_form_to_current_item)
+        self.cover_path_edit.textEdited.connect(self._save_form_to_current_item)
         self.new_button.clicked.connect(self._add_installation)
         self.delete_button.clicked.connect(self._delete_current_installation)
         self.browse_exe_button.clicked.connect(self._browse_executable)
@@ -277,6 +287,8 @@ class SettingsDialog(QDialog):
         self.detect_lutris_button.clicked.connect(self._detect_lutris_installation)
         self.browse_prefix_button.clicked.connect(self._browse_prefix_path)
         self.browse_perf_button.clicked.connect(self._browse_perf_options)
+        self.browse_cover_button.clicked.connect(self._browse_cover_image)
+        self.clear_cover_button.clicked.connect(self._clear_cover_image)
         self.log_refresh_button.clicked.connect(self._refresh_log_view)
         self.log_open_folder_button.clicked.connect(self._open_log_directory)
         self.log_clear_button.clicked.connect(self._clear_log_view)
@@ -299,6 +311,11 @@ class SettingsDialog(QDialog):
         return item
 
     def _icon_for_installation(self, installation: Installation) -> QIcon:
+        cover_path = Path(installation.cover_image_path).expanduser() if installation.cover_image_path else None
+        if cover_path is not None:
+            cover_icon = self.exe_icon_service.icon_for_cover_image(cover_path)
+            if cover_icon is not None:
+                return cover_icon
         resolved_path = self.path_mapping_service.resolve_path(installation.exe_path, installation.prefix_path)
         icon = None
         if installation.launch_method.strip().lower() == "lutris":
@@ -335,6 +352,7 @@ class SettingsDialog(QDialog):
             self.runner_target_edit.clear()
             self.launch_arguments_edit.clear()
             self.perf_path_edit.clear()
+            self.cover_path_edit.clear()
 
     def _load_current_installation_into_form(self, row: int) -> None:
         self._is_loading = True
@@ -347,6 +365,7 @@ class SettingsDialog(QDialog):
                 self.runner_target_edit.clear()
                 self.launch_arguments_edit.clear()
                 self.perf_path_edit.clear()
+                self.cover_path_edit.clear()
                 return
 
             installation = self._installations[row]
@@ -357,6 +376,7 @@ class SettingsDialog(QDialog):
             self.runner_target_edit.setText(installation.runner_target)
             self.launch_arguments_edit.setText(installation.launch_arguments)
             self.perf_path_edit.setText(installation.perf_options_path)
+            self.cover_path_edit.setText(installation.cover_image_path)
             self.perf_path_edit.setPlaceholderText(str(self.ini_service.default_perf_options_path(installation)))
             self._sync_method_specific_ui()
         finally:
@@ -378,6 +398,7 @@ class SettingsDialog(QDialog):
         installation.runner_target = self.runner_target_edit.text().strip()
         installation.launch_arguments = self.launch_arguments_edit.text().strip()
         installation.perf_options_path = self.perf_path_edit.text().strip()
+        installation.cover_image_path = self.cover_path_edit.text().strip()
         self.installation_list.item(row).setText(installation.name)
         self.installation_list.item(row).setIcon(self._icon_for_installation(installation))
         self.perf_path_edit.setPlaceholderText(str(self.ini_service.default_perf_options_path(installation)))
@@ -502,6 +523,22 @@ class SettingsDialog(QDialog):
             return
         self.prefix_path_edit.setText(directory)
         self._auto_fill_method_specific_fields()
+        self._save_form_to_current_item()
+
+    def _browse_cover_image(self) -> None:
+        filename, _ = QFileDialog.getOpenFileName(
+            self,
+            self.tr("choose_cover_dialog"),
+            self.cover_path_edit.text() or str(Path.home()),
+            "Images (*.png *.jpg *.jpeg *.webp *.bmp)",
+        )
+        if not filename:
+            return
+        self.cover_path_edit.setText(filename)
+        self._save_form_to_current_item()
+
+    def _clear_cover_image(self) -> None:
+        self.cover_path_edit.clear()
         self._save_form_to_current_item()
 
     def _detect_bottles_installation(self) -> None:

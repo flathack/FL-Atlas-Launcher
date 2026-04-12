@@ -84,6 +84,27 @@ class ExeIconService:
                 return icon
         return None
 
+    def icon_for_cover_image(self, image_path: Path, canvas_size: int = 256) -> QIcon | None:
+        if not image_path.exists():
+            return None
+
+        try:
+            stat = image_path.stat()
+        except OSError:
+            return None
+
+        cache_key = (f"cover:{image_path}", stat.st_mtime_ns, canvas_size)
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        icon = self._icon_from_artwork(image_path, canvas_size=canvas_size)
+        if icon.isNull():
+            return None
+
+        self._cache[cache_key] = icon
+        return icon
+
     def _lutris_identifier_candidates(self, target: str) -> list[str]:
         candidates: list[str] = []
         seen: set[str] = set()

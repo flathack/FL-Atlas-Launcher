@@ -10,6 +10,7 @@ class Installation:
     name: str
     exe_path: str
     perf_options_path: str = ""
+    cover_image_path: str = ""
     launch_method: str = "auto"
     prefix_path: str = ""
     runner_target: str = ""
@@ -24,6 +25,7 @@ class Installation:
         name: str,
         exe_path: str,
         perf_options_path: str = "",
+        cover_image_path: str = "",
         launch_method: str = "auto",
         prefix_path: str = "",
         runner_target: str = "",
@@ -36,6 +38,7 @@ class Installation:
             name=name.strip(),
             exe_path=exe_path.strip(),
             perf_options_path=perf_options_path.strip(),
+            cover_image_path=cover_image_path.strip(),
             launch_method=launch_method.strip() or "auto",
             prefix_path=prefix_path.strip(),
             runner_target=runner_target.strip(),
@@ -54,6 +57,7 @@ class Installation:
             name=data.get("name", "").strip(),
             exe_path=data.get("exe_path", "").strip(),
             perf_options_path=data.get("perf_options_path", "").strip(),
+            cover_image_path=str(data.get("cover_image_path", "")).strip(),
             launch_method=str(data.get("launch_method", "auto")).strip() or "auto",
             prefix_path=str(data.get("prefix_path", "")).strip(),
             runner_target=str(data.get("runner_target", "")).strip(),

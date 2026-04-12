@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
-    QFormLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -447,17 +446,19 @@ class _InnerSystemTab(QWidget, _LoadingMixin):
         return self.translator.text(key, **kwargs)
 
     def _build_ui(self) -> None:
-        filters = QWidget()
-        form = QFormLayout(filters)
-        form.setContentsMargins(0, 0, 0, 0)
-        ship_row = QHBoxLayout()
-        ship_row.addWidget(self.ship_combo, 1)
-        ship_row.addWidget(self.ship_info_button)
-        form.addRow(self.tr("trade_routes_ship"), ship_row)
-        form.addRow("", self.return_trip_checkbox)
+        ship_row = QWidget()
+        ship_layout = QHBoxLayout(ship_row)
+        ship_layout.setContentsMargins(0, 0, 0, 0)
+        ship_layout.setSpacing(6)
+        ship_layout.addWidget(self.ship_combo, 1)
+        ship_layout.addWidget(self.ship_info_button)
 
         controls = QHBoxLayout()
-        controls.addWidget(filters, 1)
+        controls.addWidget(QLabel(self.tr("trade_routes_ship")))
+        controls.addWidget(ship_row, 2)
+        controls.addWidget(self.return_trip_checkbox)
+        controls.addWidget(QLabel(self.tr("trade_routes_search")))
+        controls.addWidget(self.search_input, 2)
         controls.addWidget(self.refresh_button)
 
         loading_row = QHBoxLayout()
@@ -466,7 +467,6 @@ class _InnerSystemTab(QWidget, _LoadingMixin):
 
         root = QVBoxLayout(self)
         root.addLayout(controls)
-        root.addWidget(self.search_input)
         root.addWidget(self.loading_label)
         root.addLayout(loading_row)
         root.addWidget(self.table, 1)
@@ -769,18 +769,21 @@ class _TradeRoutesTab(QWidget, _LoadingMixin):
         return self.translator.text(key, **kwargs)
 
     def _build_ui(self) -> None:
-        filters = QWidget()
-        form = QFormLayout(filters)
-        form.setContentsMargins(0, 0, 0, 0)
-        ship_row = QHBoxLayout()
-        ship_row.addWidget(self.ship_combo, 1)
-        ship_row.addWidget(self.ship_info_button)
-        form.addRow(self.tr("trade_routes_ship"), ship_row)
-        form.addRow(self.tr("trade_routes_max_jumps"), self.jump_spin)
-        form.addRow("", self.return_trip_checkbox)
+        ship_row = QWidget()
+        ship_layout = QHBoxLayout(ship_row)
+        ship_layout.setContentsMargins(0, 0, 0, 0)
+        ship_layout.setSpacing(6)
+        ship_layout.addWidget(self.ship_combo, 1)
+        ship_layout.addWidget(self.ship_info_button)
 
         controls = QHBoxLayout()
-        controls.addWidget(filters, 1)
+        controls.addWidget(QLabel(self.tr("trade_routes_ship")))
+        controls.addWidget(ship_row, 2)
+        controls.addWidget(QLabel(self.tr("trade_routes_max_jumps")))
+        controls.addWidget(self.jump_spin)
+        controls.addWidget(self.return_trip_checkbox)
+        controls.addWidget(QLabel(self.tr("trade_routes_search")))
+        controls.addWidget(self.search_input, 2)
         controls.addWidget(self.refresh_button)
 
         loading_row = QHBoxLayout()
@@ -789,7 +792,6 @@ class _TradeRoutesTab(QWidget, _LoadingMixin):
 
         root = QVBoxLayout(self)
         root.addLayout(controls)
-        root.addWidget(self.search_input)
         root.addWidget(self.loading_label)
         root.addLayout(loading_row)
         root.addWidget(self.table, 1)
@@ -1087,18 +1089,22 @@ class _RoundTripTab(QWidget, _LoadingMixin):
         return self.translator.text(key, **kwargs)
 
     def _build_ui(self) -> None:
-        filters = QWidget()
-        form = QFormLayout(filters)
-        form.setContentsMargins(0, 0, 0, 0)
-        ship_row = QHBoxLayout()
-        ship_row.addWidget(self.ship_combo, 1)
-        ship_row.addWidget(self.ship_info_button)
-        form.addRow(self.tr("trade_routes_ship"), ship_row)
-        form.addRow(self.tr("trade_routes_max_jumps"), self.jump_spin)
-        form.addRow(self.tr("trade_round_trip_leg_count"), self.leg_spin)
+        ship_row = QWidget()
+        ship_layout = QHBoxLayout(ship_row)
+        ship_layout.setContentsMargins(0, 0, 0, 0)
+        ship_layout.setSpacing(6)
+        ship_layout.addWidget(self.ship_combo, 1)
+        ship_layout.addWidget(self.ship_info_button)
 
         controls = QHBoxLayout()
-        controls.addWidget(filters, 1)
+        controls.addWidget(QLabel(self.tr("trade_routes_ship")))
+        controls.addWidget(ship_row, 2)
+        controls.addWidget(QLabel(self.tr("trade_routes_max_jumps")))
+        controls.addWidget(self.jump_spin)
+        controls.addWidget(QLabel(self.tr("trade_round_trip_leg_count")))
+        controls.addWidget(self.leg_spin)
+        controls.addWidget(QLabel(self.tr("trade_routes_search")))
+        controls.addWidget(self.search_input, 2)
         controls.addWidget(self.refresh_button)
 
         loading_row = QHBoxLayout()
@@ -1107,7 +1113,6 @@ class _RoundTripTab(QWidget, _LoadingMixin):
 
         root = QVBoxLayout(self)
         root.addLayout(controls)
-        root.addWidget(self.search_input)
         root.addWidget(self.loading_label)
         root.addLayout(loading_row)
         root.addWidget(self.table, 1)
