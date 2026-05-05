@@ -3,13 +3,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import sys
 
+from app.themes import DEFAULT_THEME_ID, THEMES
+
 from .installation import Installation
 from .mpid_profile import MpidProfile, MpidServer
 
 
 @dataclass(slots=True)
 class AppConfig:
-    theme: str = "dark_blue"
+    theme: str = DEFAULT_THEME_ID
     language: str = "de"
     cheater_mode: bool = False
     selected_resolution: str = ""
@@ -96,8 +98,12 @@ class AppConfig:
                     except (TypeError, ValueError):
                         continue
                 faction_reputations[str(installation_id).strip()] = normalized_values
+        theme = str(data.get("theme", DEFAULT_THEME_ID)).strip()
+        if theme not in THEMES:
+            theme = DEFAULT_THEME_ID
+
         return cls(
-            theme=data.get("theme", "dark_blue"),
+            theme=theme,
             language=data.get("language", "de"),
             cheater_mode=bool(data.get("cheater_mode", False)),
             selected_resolution=data.get("selected_resolution", ""),

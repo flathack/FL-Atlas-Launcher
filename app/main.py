@@ -17,12 +17,14 @@ if __package__ in (None, ""):
     from app.services.config_service import ConfigService
     from app.services.log_service import LogService
     from app.services.update_service import UpdateService
+    from app.themes import DEFAULT_THEME_ID, THEMES
     from app.ui.main_window import MainWindow
 else:
     from .bootstrap import create_application
     from .services.config_service import ConfigService
     from .services.log_service import LogService
     from .services.update_service import UpdateService
+    from .themes import DEFAULT_THEME_ID, THEMES
     from .ui.main_window import MainWindow
 
 APP_VERSION = "v0.4.8"
@@ -56,12 +58,12 @@ def _read_theme_before_app() -> str:
     if config_path.exists():
         try:
             data = json.loads(config_path.read_text(encoding="utf-8"))
-            theme = data.get("theme", "dark_blue")
-            if isinstance(theme, str) and theme:
+            theme = data.get("theme", DEFAULT_THEME_ID)
+            if isinstance(theme, str) and theme in THEMES:
                 return theme
         except (json.JSONDecodeError, OSError):
             pass
-    return "dark_blue"
+    return DEFAULT_THEME_ID
 
 
 def _start_update_check_after_show(app: QApplication, current_version: str) -> None:

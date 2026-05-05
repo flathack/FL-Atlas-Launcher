@@ -39,7 +39,7 @@ from PySide6.QtWidgets import (
 
 from app.i18n import Translator
 from app.models.app_config import AppConfig
-from app.themes import THEMES
+from app.themes import theme_colors
 from app.models.installation import Installation
 from app.resource_utils import resource_path
 from app.services.cheat_service import CheatService
@@ -467,7 +467,7 @@ class MainWindow(QMainWindow):
         self.cheat_installation_label.setWordWrap(True)
         hint_label = QLabel(self.tr("cheat_panel_hint"))
         hint_label.setWordWrap(True)
-        hint_label.setStyleSheet(f"color: {THEMES[self.config.theme].hint_text};")
+        hint_label.setStyleSheet(f"color: {theme_colors(self.config.theme).hint_text};")
 
         # --- Cruise Charge row ---
         self.cruise_charge_value_label = QLabel()
@@ -567,7 +567,7 @@ class MainWindow(QMainWindow):
     def _build_cheat_section(self) -> QFrame:
         section = QFrame()
         section.setFrameShape(QFrame.Shape.StyledPanel)
-        c = THEMES[self.config.theme]
+        c = theme_colors(self.config.theme)
         section.setStyleSheet(
             f"QFrame {{ background-color: {c.alternate_base}; border: 1px solid {c.border}; border-radius: 12px; }}"
             "QLabel { border: none; background: transparent; }"
@@ -575,7 +575,7 @@ class MainWindow(QMainWindow):
         return section
 
     def _set_cheat_sync_progress_active(self, active: bool) -> None:
-        c = THEMES[self.config.theme]
+        c = theme_colors(self.config.theme)
         chunk_color = "#39d353" if active else c.border
         groove_color = c.border if active else c.alternate_base
         if active:
@@ -1179,7 +1179,7 @@ class MainWindow(QMainWindow):
         if not self.show_cheat_features or not hasattr(self, "cheater_mode_switch"):
             return
         self.cheater_mode_switch.setText("ON" if enabled else "OFF")
-        c = THEMES[self.config.theme]
+        c = theme_colors(self.config.theme)
         self.cheater_mode_switch.setStyleSheet(
             f"""
             QCheckBox {{

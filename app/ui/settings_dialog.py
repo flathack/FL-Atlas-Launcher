@@ -6,7 +6,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QIcon
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -37,7 +37,7 @@ from app.services.ini_service import IniService
 from app.services.log_service import LogService
 from app.services.lutris_runtime import build_lutris_environment
 from app.services.path_mapping_service import PathMappingService
-from app.themes import THEMES, THEME_DISPLAY_NAMES
+from app.themes import DEFAULT_THEME_ID, THEMES, THEME_DISPLAY_NAMES
 
 try:
     import yaml
@@ -53,7 +53,7 @@ class SettingsDialog(QDialog):
         installations: list[Installation],
         translator: Translator,
         current_language: str = "de",
-        current_theme: str = "dark_blue",
+        current_theme: str = DEFAULT_THEME_ID,
         current_display_mode: str = "icons",
         parent: QWidget | None = None,
     ) -> None:
@@ -70,6 +70,10 @@ class SettingsDialog(QDialog):
         self._current_language = current_language
         self._current_theme = current_theme
         self._current_display_mode = current_display_mode
+        self._pending_icon_rows: list[int] = []
+        self._log_view_loaded = False
+        self._icon_refresh_timer = QTimer(self)
+        self._icon_refresh_timer.setInterval(35)
 
         self.installation_list = QListWidget()
         self.installation_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -106,7 +110,10 @@ class SettingsDialog(QDialog):
         for theme_id in THEMES:
             display = THEME_DISPLAY_NAMES.get(theme_id, {}).get(lang, theme_id)
             self.theme_combo.addItem(display, theme_id)
-        self.theme_combo.setCurrentIndex(max(0, self.theme_combo.findData(self._current_theme)))
+        theme_index = self.theme_combo.findData(self._current_theme)
+        if theme_index < 0:
+            theme_index = self.theme_combo.findData(DEFAULT_THEME_ID)
+        self.theme_combo.setCurrentIndex(max(0, theme_index))
 
         self.launcher_view_combo = QComboBox()
         if sys.platform.startswith("linux"):
@@ -124,6 +131,7 @@ class SettingsDialog(QDialog):
         self.log_hint_label.setWordWrap(True)
         self.log_text_edit = QPlainTextEdit()
         self.log_text_edit.setReadOnly(True)
+        self.log_text_edit.setPlainText("")
         self.log_refresh_button = QPushButton(self.tr("refresh"))
         self.log_open_folder_button = QPushButton(self.tr("show_in_explorer"))
         self.log_clear_button = QPushButton(self.tr("clear_log"))
@@ -131,7 +139,6 @@ class SettingsDialog(QDialog):
         self._build_ui()
         self._connect_signals()
         self._populate_installations()
-        self._refresh_log_view()
 
     @property
     def installations(self) -> list[Installation]:
@@ -158,6 +165,7 @@ class SettingsDialog(QDialog):
 
     def _build_ui(self) -> None:
         tabs = QTabWidget()
+        self.tabs = tabs
 
         # --- Installations tab ---
         installations_tab = QWidget()
@@ -236,6 +244,7 @@ class SettingsDialog(QDialog):
 
         # --- Log tab ---
         log_tab = QWidget()
+        self.log_tab = log_tab
         log_layout = QVBoxLayout(log_tab)
         log_form = QFormLayout()
         log_form.setContentsMargins(24, 24, 24, 0)
@@ -258,6 +267,12 @@ class SettingsDialog(QDialog):
         root_layout.addWidget(tabs)
         root_layout.addWidget(self.button_box)
 
+    def _on_tab_changed(self, index: int) -> None:
+        if self._log_view_loaded:
+            return
+        if self.tabs.widget(index) is self.log_tab:
+            self._refresh_log_view()
+
     def _with_button(self, line_edit: QLineEdit, button: QPushButton) -> QWidget:
         return self._with_buttons(line_edit, button)
 
@@ -274,6 +289,8 @@ class SettingsDialog(QDialog):
         self.installation_list.currentRowChanged.connect(self._load_current_installation_into_form)
         self.name_edit.textEdited.connect(self._save_form_to_current_item)
         self.launch_method_combo.currentIndexChanged.connect(self._on_launch_method_changed)
+        self.tabs.currentChanged.connect(self._on_tab_changed)
+        self._icon_refresh_timer.timeout.connect(self._refresh_next_installation_icon)
         self.exe_path_edit.textEdited.connect(self._save_form_to_current_item)
         self.prefix_path_edit.textEdited.connect(self._save_form_to_current_item)
         self.runner_target_edit.textEdited.connect(self._save_form_to_current_item)
@@ -295,20 +312,51 @@ class SettingsDialog(QDialog):
         self.button_box.accepted.connect(self._on_accept)
         self.button_box.rejected.connect(self.reject)
 
+    def closeEvent(self, event) -> None:
+        self._icon_refresh_timer.stop()
+        super().closeEvent(event)
+
     def _populate_installations(self) -> None:
+        self._pending_icon_rows.clear()
+        self._icon_refresh_timer.stop()
         self.installation_list.clear()
         for installation in self._installations:
             self.installation_list.addItem(self._build_list_item(installation))
 
         if self._installations:
             self.installation_list.setCurrentRow(0)
+            QTimer.singleShot(0, self._queue_installation_icon_refresh)
         else:
             self._add_installation()
 
     def _build_list_item(self, installation: Installation) -> QListWidgetItem:
-        item = QListWidgetItem(self._icon_for_installation(installation), installation.name or self.tr("new_installation"))
+        item = QListWidgetItem(self._fast_installation_icon(), installation.name or self.tr("new_installation"))
         item.setData(Qt.ItemDataRole.UserRole, installation.id)
         return item
+
+    def _fast_installation_icon(self) -> QIcon:
+        return self.style().standardIcon(self.style().StandardPixmap.SP_ComputerIcon)
+
+    def _queue_installation_icon_refresh(self, rows: list[int] | None = None) -> None:
+        requested_rows = rows if rows is not None else list(range(len(self._installations)))
+        queued_rows = set(self._pending_icon_rows)
+        for row in requested_rows:
+            if 0 <= row < len(self._installations) and row not in queued_rows:
+                self._pending_icon_rows.append(row)
+                queued_rows.add(row)
+        if self._pending_icon_rows and not self._icon_refresh_timer.isActive():
+            self._icon_refresh_timer.start()
+
+    def _refresh_next_installation_icon(self) -> None:
+        if not self._pending_icon_rows:
+            self._icon_refresh_timer.stop()
+            return
+        row = self._pending_icon_rows.pop(0)
+        if row >= len(self._installations):
+            return
+        item = self.installation_list.item(row)
+        if item is not None:
+            item.setIcon(self._icon_for_installation(self._installations[row]))
 
     def _icon_for_installation(self, installation: Installation) -> QIcon:
         cover_path = Path(installation.cover_image_path).expanduser() if installation.cover_image_path else None
@@ -400,7 +448,8 @@ class SettingsDialog(QDialog):
         installation.perf_options_path = self.perf_path_edit.text().strip()
         installation.cover_image_path = self.cover_path_edit.text().strip()
         self.installation_list.item(row).setText(installation.name)
-        self.installation_list.item(row).setIcon(self._icon_for_installation(installation))
+        self.installation_list.item(row).setIcon(self._fast_installation_icon())
+        self._queue_installation_icon_refresh([row])
         self.perf_path_edit.setPlaceholderText(str(self.ini_service.default_perf_options_path(installation)))
 
     def _on_launch_method_changed(self) -> None:
@@ -757,6 +806,7 @@ class SettingsDialog(QDialog):
         return self.prefix_path_edit.text().strip()
 
     def _refresh_log_view(self) -> None:
+        self._log_view_loaded = True
         log_text = LogService.read_log_text()
         if log_text:
             self.log_text_edit.setPlainText(log_text)

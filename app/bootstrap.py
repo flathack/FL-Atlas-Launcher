@@ -6,7 +6,7 @@ from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
 from app.resource_utils import resource_path
-from app.themes import build_palette, build_stylesheet
+from app.themes import DEFAULT_THEME_ID, build_palette, build_stylesheet
 
 
 APP_NAME = "FL Atlas Launcher"
@@ -18,7 +18,7 @@ def apply_theme(app: QApplication, theme_id: str) -> None:
     app.setStyleSheet(build_stylesheet(theme_id))
 
 
-def create_application(theme_id: str = "dark_blue") -> QApplication:
+def create_application(theme_id: str = DEFAULT_THEME_ID) -> QApplication:
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setOrganizationName(ORG_NAME)

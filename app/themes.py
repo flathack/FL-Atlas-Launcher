@@ -5,6 +5,9 @@ from dataclasses import dataclass
 from PySide6.QtGui import QColor, QPalette
 
 
+DEFAULT_THEME_ID = "swat_blackops"
+
+
 @dataclass(frozen=True, slots=True)
 class ThemeColors:
     window: str
@@ -68,170 +71,112 @@ THEMES: dict[str, ThemeColors] = {
         disabled_button_text="#8492a7",
         hint_text="#8fa2bc",
     ),
-    "red": ThemeColors(
-        window="#1a0d0d",
-        window_text="#f5e0e0",
-        base="#241212",
-        alternate_base="#2e1a1a",
-        text="#f5e0e0",
-        button="#3a1e1e",
-        button_text="#f5e0e0",
-        highlight="#5c2020",
-        highlight_text="#f5e0e0",
-        placeholder_text="#8a6060",
-        link="#ff6b6b",
-        subline="#c4a0a0",
-        toolbar_bg="#241212",
-        border="#5c2828",
-        item_selected="#5c2020",
-        item_selected_border="#a04040",
-        item_hover="#2e1a1a",
-        primary_button="#8b2020",
-        primary_button_text="#fff0f0",
-        secondary_button="#2a1414",
-        secondary_button_border="#5c2828",
-        secondary_button_text="#e0c0c0",
-        danger_button="#7d2b37",
-        danger_button_text="#fff2f4",
-        danger_button_hover="#9a3545",
-        disabled_button="#4a3030",
-        disabled_button_text="#8a7070",
-        hint_text="#a07070",
+    "modern_dark": ThemeColors(
+        window="#070a12",
+        window_text="#f4f7fb",
+        base="#0c111d",
+        alternate_base="#121a2a",
+        text="#e8edf7",
+        button="#151f32",
+        button_text="#f3f7ff",
+        highlight="#18b6a7",
+        highlight_text="#021211",
+        placeholder_text="#718096",
+        link="#7dd3fc",
+        subline="#9aa8bd",
+        toolbar_bg="#090e18",
+        border="#263349",
+        item_selected="#102f3c",
+        item_selected_border="#22d3ee",
+        item_hover="#182337",
+        primary_button="#18b6a7",
+        primary_button_text="#021211",
+        secondary_button="#101827",
+        secondary_button_border="#314158",
+        secondary_button_text="#d8e2f3",
+        danger_button="#b42342",
+        danger_button_text="#fff5f7",
+        danger_button_hover="#d92d54",
+        disabled_button="#202938",
+        disabled_button_text="#748095",
+        hint_text="#8ea0b8",
     ),
-    "yellow": ThemeColors(
-        window="#1a1708",
-        window_text="#f5f0d0",
-        base="#24200e",
-        alternate_base="#2e2814",
-        text="#f5f0d0",
-        button="#3a3418",
-        button_text="#f5f0d0",
-        highlight="#5c5010",
-        highlight_text="#f5f0d0",
-        placeholder_text="#8a8050",
-        link="#f0c040",
-        subline="#c4b880",
-        toolbar_bg="#24200e",
-        border="#5c5020",
-        item_selected="#5c5010",
-        item_selected_border="#a09020",
-        item_hover="#2e2814",
-        primary_button="#8b7a10",
-        primary_button_text="#fff8e0",
-        secondary_button="#2a2610",
-        secondary_button_border="#5c5020",
-        secondary_button_text="#e0d8a0",
-        danger_button="#7d2b37",
-        danger_button_text="#fff2f4",
-        danger_button_hover="#9a3545",
-        disabled_button="#4a4428",
-        disabled_button_text="#8a8060",
-        hint_text="#a09060",
-    ),
-    "black": ThemeColors(
-        window="#0a0a0a",
-        window_text="#d4d4d4",
-        base="#141414",
-        alternate_base="#1c1c1c",
-        text="#d4d4d4",
-        button="#262626",
-        button_text="#d4d4d4",
-        highlight="#3a3a3a",
-        highlight_text="#e0e0e0",
-        placeholder_text="#666666",
-        link="#808080",
-        subline="#999999",
-        toolbar_bg="#141414",
-        border="#333333",
-        item_selected="#3a3a3a",
-        item_selected_border="#555555",
-        item_hover="#1c1c1c",
-        primary_button="#444444",
-        primary_button_text="#e8e8e8",
-        secondary_button="#1e1e1e",
-        secondary_button_border="#404040",
-        secondary_button_text="#b0b0b0",
-        danger_button="#5a1a1a",
-        danger_button_text="#f0d0d0",
-        danger_button_hover="#6a2a2a",
-        disabled_button="#2e2e2e",
-        disabled_button_text="#606060",
-        hint_text="#777777",
-    ),
-    "light": ThemeColors(
-        window="#f0f2f5",
-        window_text="#1a1a2e",
+    "modern_light": ThemeColors(
+        window="#f4f7fb",
+        window_text="#111827",
         base="#ffffff",
-        alternate_base="#e8ecf0",
-        text="#1a1a2e",
-        button="#dce0e8",
-        button_text="#1a1a2e",
-        highlight="#4a90d9",
+        alternate_base="#eef3f8",
+        text="#1f2937",
+        button="#e6edf5",
+        button_text="#111827",
+        highlight="#2563eb",
         highlight_text="#ffffff",
-        placeholder_text="#8890a0",
-        link="#2060c0",
-        subline="#5a6070",
-        toolbar_bg="#e0e4ea",
-        border="#c0c8d4",
-        item_selected="#4a90d9",
-        item_selected_border="#2070cc",
-        item_hover="#e8ecf0",
-        primary_button="#2070cc",
+        placeholder_text="#8a97a8",
+        link="#0f766e",
+        subline="#637083",
+        toolbar_bg="#e9eff6",
+        border="#c9d5e3",
+        item_selected="#dbeafe",
+        item_selected_border="#2563eb",
+        item_hover="#eaf1f9",
+        primary_button="#2563eb",
         primary_button_text="#ffffff",
-        secondary_button="#e4e8f0",
-        secondary_button_border="#b8c0d0",
-        secondary_button_text="#3a4050",
-        danger_button="#cc3030",
+        secondary_button="#f8fafc",
+        secondary_button_border="#c9d5e3",
+        secondary_button_text="#263244",
+        danger_button="#dc2626",
         danger_button_text="#ffffff",
-        danger_button_hover="#dd4040",
-        disabled_button="#c8ccd4",
-        disabled_button_text="#8890a0",
-        hint_text="#7080a0",
+        danger_button_hover="#b91c1c",
+        disabled_button="#dce3eb",
+        disabled_button_text="#8894a5",
+        hint_text="#6b7788",
     ),
-    "green": ThemeColors(
-        window="#0c1a10",
-        window_text="#d8f0dc",
-        base="#102418",
-        alternate_base="#182e1e",
-        text="#d8f0dc",
-        button="#1e3a24",
-        button_text="#d8f0dc",
-        highlight="#1a5c28",
-        highlight_text="#d8f0dc",
-        placeholder_text="#5a8a60",
-        link="#40c060",
-        subline="#90c4a0",
-        toolbar_bg="#102418",
-        border="#285c30",
-        item_selected="#1a5c28",
-        item_selected_border="#30a040",
-        item_hover="#182e1e",
-        primary_button="#1a7a2a",
-        primary_button_text="#f0fff0",
-        secondary_button="#142a18",
-        secondary_button_border="#285c30",
-        secondary_button_text="#a0d8a8",
-        danger_button="#7d2b37",
-        danger_button_text="#fff2f4",
-        danger_button_hover="#9a3545",
-        disabled_button="#2a4a30",
-        disabled_button_text="#608068",
-        hint_text="#608a68",
+    "swat_blackops": ThemeColors(
+        window="#151515",
+        window_text="#f5f5f5",
+        base="#212121",
+        alternate_base="#1e1e1e",
+        text="#cccccc",
+        button="#323232",
+        button_text="#f2f2f2",
+        highlight="#d62c00",
+        highlight_text="#ffffff",
+        placeholder_text="#777777",
+        link="#ee3841",
+        subline="#999999",
+        toolbar_bg="#151515",
+        border="#353535",
+        item_selected="#3a1a12",
+        item_selected_border="#ee3841",
+        item_hover="#303030",
+        primary_button="#d62c00",
+        primary_button_text="#ffffff",
+        secondary_button="#2b2b2b",
+        secondary_button_border="#585858",
+        secondary_button_text="#cccccc",
+        danger_button="#aa2800",
+        danger_button_text="#ffffff",
+        danger_button_hover="#ee3841",
+        disabled_button="#2b2b2b",
+        disabled_button_text="#777777",
+        hint_text="#999999",
     ),
 }
 
 THEME_DISPLAY_NAMES: dict[str, dict[str, str]] = {
     "dark_blue": {"de": "Dunkelblau", "en": "Dark Blue"},
-    "red": {"de": "Rot", "en": "Red"},
-    "yellow": {"de": "Gelb", "en": "Yellow"},
-    "black": {"de": "Schwarz", "en": "Black"},
-    "light": {"de": "Hell", "en": "Light"},
-    "green": {"de": "Grün", "en": "Green"},
+    "modern_dark": {"de": "Modern Dark", "en": "Modern Dark"},
+    "modern_light": {"de": "Modern Light", "en": "Modern Light"},
+    "swat_blackops": {"de": "SWAT BlackOps", "en": "SWAT BlackOps"},
 }
 
 
+def theme_colors(theme_id: str) -> ThemeColors:
+    return THEMES.get(theme_id, THEMES[DEFAULT_THEME_ID])
+
+
 def build_palette(theme_id: str) -> QPalette:
-    colors = THEMES.get(theme_id, THEMES["dark_blue"])
+    colors = theme_colors(theme_id)
     palette = QPalette()
     palette.setColor(QPalette.ColorRole.Window, QColor(colors.window))
     palette.setColor(QPalette.ColorRole.WindowText, QColor(colors.window_text))
@@ -251,7 +196,7 @@ def build_palette(theme_id: str) -> QPalette:
 
 
 def build_stylesheet(theme_id: str) -> str:
-    c = THEMES.get(theme_id, THEMES["dark_blue"])
+    c = theme_colors(theme_id)
     return f"""
 QMainWindow {{
   background-color: {c.window};
@@ -363,7 +308,7 @@ QFrame[frameShape="5"],
 QFrame[frameShape="6"],
 QFrame#controlDeck,
 QFrame#cheatPanel {{
-  background: rgba(14, 26, 46, 232);
+  background: {c.alternate_base};
   border: 1px solid {c.border};
   border-radius: 8px;
 }}
@@ -375,7 +320,7 @@ QFrame#controlDeck {{
 
 QFrame#tradeFilterPanel,
 QFrame#tradeDetailsPanel {{
-  background: rgba(14, 26, 46, 235);
+  background: {c.alternate_base};
   border: 1px solid {c.border};
   border-radius: 8px;
 }}
@@ -564,7 +509,7 @@ QHeaderView::section {{
 }}
 
 QTableView {{
-  alternate-background-color: rgba(20, 35, 58, 180);
+  alternate-background-color: {c.alternate_base};
 }}
 
 QTableView::item {{
