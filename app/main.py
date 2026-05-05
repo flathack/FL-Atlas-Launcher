@@ -5,8 +5,10 @@ import logging
 import json
 from pathlib import Path
 import sys
+import threading
 import traceback
 
+from PySide6.QtCore import QMetaObject, Qt
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 if __package__ in (None, ""):
@@ -23,7 +25,7 @@ else:
     from .services.update_service import UpdateService
     from .ui.main_window import MainWindow
 
-APP_VERSION = "v0.4.7"
+APP_VERSION = "v0.4.8"
 
 
 def _write_startup_log(error_text: str) -> Path:
@@ -62,6 +64,22 @@ def _read_theme_before_app() -> str:
     return "dark_blue"
 
 
+def _start_update_check_after_show(app: QApplication, current_version: str) -> None:
+    if not getattr(sys, "frozen", False):
+        return
+
+    def run_update_check() -> None:
+        try:
+            if UpdateService().check_and_apply_startup_update(current_version):
+                logging.getLogger("fl_atlas.main").info("Startup update scheduled, exiting for restart")
+                QMetaObject.invokeMethod(app, "quit", Qt.ConnectionType.QueuedConnection)
+        except Exception:
+            logging.getLogger("fl_atlas.main").exception("Background startup update check failed")
+
+    worker = threading.Thread(target=run_update_check, name="startup-update-check", daemon=True)
+    worker.start()
+
+
 def main() -> int:
     try:
         log_path = LogService.configure()
@@ -70,15 +88,13 @@ def main() -> int:
         logger.info("Starting FL Atlas Launcher %s with theme=%s", APP_VERSION, theme)
         app = create_application(theme)
         config_service = ConfigService()
-        if UpdateService().check_and_apply_startup_update(APP_VERSION):
-            logger.info("Startup update applied, exiting for restart")
-            return 0
         window = MainWindow(
             config_service=config_service,
             app_version=APP_VERSION,
             show_cheat_features=False,
         )
         window.show()
+        _start_update_check_after_show(app, APP_VERSION)
         logger.info("Main window shown. Log file: %s", log_path)
         return app.exec()
     except Exception:

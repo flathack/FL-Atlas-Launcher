@@ -38,7 +38,7 @@ class ExeIconService:
         if cached is not None:
             return cached
 
-        icon = self._extract_icon(exe_path)
+        icon = self._extract_icon(exe_path, size)
         if icon is None or icon.isNull():
             return None
 
@@ -228,7 +228,7 @@ class ExeIconService:
         self._lutris_slug_cache = slug_map
         return slug_map
 
-    def _extract_icon(self, exe_path: Path) -> QIcon | None:
+    def _extract_icon(self, exe_path: Path, target_size: int = 48) -> QIcon | None:
         fallback_icon = self._load_bottles_cached_icon(exe_path)
         if pefile is None:
             return fallback_icon
@@ -251,7 +251,7 @@ class ExeIconService:
         if not icon_blobs or group_blob is None:
             return fallback_icon
 
-        ico_bytes = self._build_ico_bytes(group_blob, icon_blobs)
+        ico_bytes = self._build_ico_bytes(group_blob, icon_blobs, target_size)
         if ico_bytes is None:
             return fallback_icon
 
@@ -293,7 +293,12 @@ class ExeIconService:
                     return pe.get_memory_mapped_image()[start:start + size]
         return None
 
-    def _build_ico_bytes(self, group_blob: bytes, icon_blobs: dict[int, bytes]) -> bytes | None:
+    def _build_ico_bytes(
+        self,
+        group_blob: bytes,
+        icon_blobs: dict[int, bytes],
+        target_size: int = 48,
+    ) -> bytes | None:
         if len(group_blob) < 6:
             return None
 
@@ -303,7 +308,7 @@ class ExeIconService:
         if icon_type != 1 or reserved != 0 or count <= 0:
             return None
 
-        entries: list[tuple[bytes, bytes]] = []
+        entries: list[tuple[int, bytes, bytes]] = []
         cursor = 6
         for _ in range(count):
             if cursor + 14 > len(group_blob):
@@ -322,19 +327,22 @@ class ExeIconService:
             if payload is None:
                 continue
 
+            pixel_size = width[0] or 256
             entry = width + height + color_count + reserved_byte + planes + bit_count
             entry += len(payload).to_bytes(4, "little")
-            entries.append((entry, payload))
+            entries.append((pixel_size, entry, payload))
 
         if not entries:
             return None
+
+        entries.sort(key=lambda item: (item[0] < target_size, abs(item[0] - target_size), -item[0]))
 
         header = (0).to_bytes(2, "little") + (1).to_bytes(2, "little") + len(entries).to_bytes(2, "little")
         offset = 6 + (16 * len(entries))
         directory = bytearray()
         payload = bytearray()
 
-        for entry, blob in entries:
+        for _pixel_size, entry, blob in entries:
             directory.extend(entry)
             directory.extend(offset.to_bytes(4, "little"))
             payload.extend(blob)

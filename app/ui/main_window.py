@@ -109,6 +109,8 @@ class MainWindow(QMainWindow):
         self._process_worker_running = False
         self._cheat_sync_worker_running = False
         self._running_processes: dict[str, list[int]] = {}
+        self._defer_installation_icons = True
+        self._pending_icon_refresh_rows: list[int] = []
         self._trade_route_windows: list[TradeRouteTabbedDialog] = []
         self.sync_notifier = SyncNotifier()
         self.process_notifier = ProcessNotifier()
@@ -122,7 +124,7 @@ class MainWindow(QMainWindow):
         )
 
         self.setWindowTitle(self.tr("app_title", version=self.app_version))
-        self.resize(1260, 680)
+        self.resize(1120, 620)
         app_icon_path = resource_path("resources", "icons", "fl_atlas_launcher_icon.svg")
         if app_icon_path.exists():
             self.setWindowIcon(QIcon(str(app_icon_path)))
@@ -137,8 +139,8 @@ class MainWindow(QMainWindow):
         self.installation_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.installation_list.setUniformItemSizes(False)
         self.installation_list.setIconSize(QSize(48, 48))
-        self.installation_list.setGridSize(QSize(190, 140))
-        self.installation_list.setSpacing(12)
+        self.installation_list.setGridSize(QSize(168, 118))
+        self.installation_list.setSpacing(8)
         self.installation_list.setWordWrap(True)
         self.installation_list.setTextElideMode(Qt.TextElideMode.ElideNone)
         self._apply_installation_list_layout_mode()
@@ -162,11 +164,13 @@ class MainWindow(QMainWindow):
         self.hudshift_service = HudShiftService(self._get_cheat_service())
         self.launch_button = QPushButton(self.tr("start"))
         self.launch_button.setProperty("variant", "primary")
-        self.launch_button.setMinimumHeight(40)
+        self.launch_button.setMinimumHeight(34)
         self.sync_timer = QTimer(self)
         self.sync_timer.setInterval(self.SYNC_POLL_INTERVAL_MS)
         self.process_timer = QTimer(self)
         self.process_timer.setInterval(self.PROCESS_POLL_INTERVAL_MS)
+        self.icon_refresh_timer = QTimer(self)
+        self.icon_refresh_timer.setInterval(35)
         self.cheat_toast_timer = QTimer(self)
         self.cheat_toast_timer.setSingleShot(True)
         from PySide6.QtWidgets import QApplication
@@ -183,6 +187,12 @@ class MainWindow(QMainWindow):
         self._populate_font_scale()
         self._populate_installations()
         self._update_launch_state()
+        self._update_sync_indicator(self._sync_state or "unconfigured")
+        QTimer.singleShot(250, self._start_background_refreshes)
+
+    def _start_background_refreshes(self) -> None:
+        self._defer_installation_icons = False
+        self._apply_process_icons()
         self._refresh_sync_state(trigger_sync=True)
         self._refresh_process_state()
         self.sync_timer.start()
@@ -199,7 +209,7 @@ class MainWindow(QMainWindow):
         self.help_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.help_button.setToolTip(self.tr("toolbar_help_tooltip"))
         self.help_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        self.help_button.setMinimumSize(QSize(88, 38))
+        self.help_button.setMinimumSize(QSize(72, 30))
         if self.show_cheat_features:
             self.cheater_mode_label = QLabel(self.tr("cheater_mode"))
             self.cheater_mode_switch = QCheckBox()
@@ -220,7 +230,7 @@ class MainWindow(QMainWindow):
 
         toolbar = QToolBar(self.tr("toolbar_main"))
         toolbar.setMovable(False)
-        toolbar.setIconSize(QSize(26, 26))
+        toolbar.setIconSize(QSize(20, 20))
         toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.addToolBar(toolbar)
 
@@ -273,15 +283,15 @@ class MainWindow(QMainWindow):
         root = QWidget()
         root.setObjectName("launcherRoot")
         layout = QVBoxLayout(root)
-        layout.setContentsMargins(26, 24, 26, 24)
-        layout.setSpacing(18)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(10)
 
         header = QWidget()
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(0, 0, 0, 0)
-        header_layout.setSpacing(14)
+        header_layout.setSpacing(10)
         logo_label = QLabel()
-        logo_label.setFixedSize(52, 52)
+        logo_label.setFixedSize(36, 36)
         logo_path = resource_path("resources", "icons", "fl_atlas_launcher_icon_512.png")
         if logo_path.exists():
             pixmap = QPixmap(str(logo_path))
@@ -311,27 +321,26 @@ class MainWindow(QMainWindow):
 
         action_row = QFrame()
         action_row.setObjectName("controlDeck")
-        action_layout = QGridLayout(action_row)
-        action_layout.setContentsMargins(16, 14, 16, 14)
-        action_layout.setHorizontalSpacing(12)
-        action_layout.setVerticalSpacing(10)
+        action_layout = QHBoxLayout(action_row)
+        action_layout.setContentsMargins(10, 8, 10, 8)
+        action_layout.setSpacing(8)
         mpid_label = QLabel(self.tr("multiplayer_id"))
         mpid_label.setObjectName("fieldLabel")
         resolution_label = QLabel(self.tr("resolution"))
         resolution_label.setObjectName("fieldLabel")
-        action_layout.addWidget(mpid_label, 0, 0)
-        action_layout.addWidget(self.mpid_combo, 0, 1, 1, 3)
-        action_layout.addWidget(resolution_label, 0, 4)
-        action_layout.addWidget(self.resolution_combo, 0, 5)
-        action_layout.addWidget(self.mod_file_changes_checkbox, 1, 0, 1, 2)
-        action_layout.addWidget(self.font_scale_checkbox, 1, 2)
-        action_layout.addWidget(self.hudshift_checkbox, 1, 3)
-        action_layout.addWidget(self.hudshift_aspect_combo, 1, 4, 1, 2)
-        self.launch_button.setMinimumWidth(180)
-        action_layout.addWidget(self.launch_button, 0, 6, 2, 1)
-        action_layout.setColumnStretch(1, 2)
-        action_layout.setColumnStretch(3, 1)
-        action_layout.setColumnStretch(5, 1)
+        self.mpid_combo.setMinimumWidth(220)
+        self.resolution_combo.setMinimumWidth(118)
+        self.hudshift_aspect_combo.setMinimumWidth(96)
+        self.launch_button.setMinimumWidth(136)
+        action_layout.addWidget(mpid_label)
+        action_layout.addWidget(self.mpid_combo, 3)
+        action_layout.addWidget(resolution_label)
+        action_layout.addWidget(self.resolution_combo, 1)
+        action_layout.addWidget(self.mod_file_changes_checkbox)
+        action_layout.addWidget(self.font_scale_checkbox)
+        action_layout.addWidget(self.hudshift_checkbox)
+        action_layout.addWidget(self.hudshift_aspect_combo)
+        action_layout.addWidget(self.launch_button)
 
         self.cheat_sync_progress = QProgressBar()
         self.cheat_sync_progress.setMinimum(0)
@@ -343,7 +352,7 @@ class MainWindow(QMainWindow):
         content_row = QWidget()
         content_layout = QHBoxLayout(content_row)
         content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(18)
+        content_layout.setSpacing(10)
         content_layout.addWidget(self.installation_list, 1)
         if self.show_cheat_features:
             self.cheat_panel = self._build_cheat_panel()
@@ -445,15 +454,15 @@ class MainWindow(QMainWindow):
         panel = QFrame()
         panel.setObjectName("cheatPanel")
         panel.setFrameShape(QFrame.Shape.StyledPanel)
-        panel.setMinimumWidth(310)
-        panel.setMaximumWidth(370)
+        panel.setMinimumWidth(280)
+        panel.setMaximumWidth(330)
 
         layout = QVBoxLayout(panel)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(10)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
 
         title_label = QLabel(self.tr("cheat_panel_title"))
-        title_label.setStyleSheet("font-weight: 600; font-size: 15px;")
+        title_label.setStyleSheet("font-weight: 600; font-size: 13px;")
         self.cheat_installation_label = QLabel(self.tr("cheat_no_installation"))
         self.cheat_installation_label.setWordWrap(True)
         hint_label = QLabel(self.tr("cheat_panel_hint"))
@@ -493,14 +502,14 @@ class MainWindow(QMainWindow):
 
         # --- Ship Handling buttons ---
         self.ship_handling_button = QPushButton(self.tr("ship_handling_open"))
-        self.ship_handling_button.setMinimumHeight(34)
+        self.ship_handling_button.setMinimumHeight(30)
 
         # --- Compact cheat grid: one row per cheat ---
         cheats_section = self._build_cheat_section()
         grid = QGridLayout(cheats_section)
-        grid.setContentsMargins(12, 12, 12, 12)
-        grid.setHorizontalSpacing(8)
-        grid.setVerticalSpacing(6)
+        grid.setContentsMargins(10, 10, 10, 10)
+        grid.setHorizontalSpacing(7)
+        grid.setVerticalSpacing(5)
 
         row = 0
         # Cruise Charge: label | slider | value
@@ -534,8 +543,8 @@ class MainWindow(QMainWindow):
         # --- Tools section ---
         tools_section = self._build_cheat_section()
         tools_layout = QVBoxLayout(tools_section)
-        tools_layout.setContentsMargins(12, 12, 12, 12)
-        tools_layout.setSpacing(8)
+        tools_layout.setContentsMargins(10, 10, 10, 10)
+        tools_layout.setSpacing(6)
         tools_header = QLabel(self.tr("cheat_tools_title"))
         tools_header.setStyleSheet("font-weight: 600;")
         tools_layout.addWidget(tools_header)
@@ -544,7 +553,7 @@ class MainWindow(QMainWindow):
         self.mod_controls_widget = QWidget()
         mod_layout = QVBoxLayout(self.mod_controls_widget)
         mod_layout.setContentsMargins(0, 0, 0, 0)
-        mod_layout.setSpacing(10)
+        mod_layout.setSpacing(8)
         mod_layout.addWidget(cheats_section)
         mod_layout.addWidget(tools_section)
 
@@ -631,6 +640,7 @@ class MainWindow(QMainWindow):
         if not self._persistent_signals_connected:
             self.sync_timer.timeout.connect(lambda: self._refresh_sync_state(trigger_sync=False))
             self.process_timer.timeout.connect(self._refresh_process_state)
+            self.icon_refresh_timer.timeout.connect(self._refresh_next_installation_icon)
             self.sync_notifier.result_ready.connect(self._apply_sync_result)
             self.process_notifier.result_ready.connect(self._apply_process_state)
             self.cheat_sync_notifier.result_ready.connect(self._apply_cheat_sync_result)
@@ -654,6 +664,7 @@ class MainWindow(QMainWindow):
                 pass
         self.sync_timer.stop()
         self.process_timer.stop()
+        self.icon_refresh_timer.stop()
         self.cheat_toast_timer.stop()
         super().closeEvent(event)
 
@@ -817,11 +828,14 @@ class MainWindow(QMainWindow):
 
     def _populate_installations(self) -> None:
         self._apply_installation_list_layout_mode()
+        self._pending_icon_refresh_rows.clear()
+        self.icon_refresh_timer.stop()
         self.installation_list.clear()
         last_id = self.config.last_installation_id
         select_row = 0
+        fast_icon = self._fast_installation_icon()
         for index, installation in enumerate(self.config.installations):
-            item = QListWidgetItem(self._icon_for_installation(installation), installation.name)
+            item = QListWidgetItem(fast_icon, installation.name)
             item.setData(Qt.ItemDataRole.UserRole, installation.id)
             item.setToolTip(installation.exe_path)
             item.setTextAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -833,8 +847,13 @@ class MainWindow(QMainWindow):
         if self.installation_list.count():
             self.installation_list.setCurrentRow(select_row)
             self._show_last_played_status()
+        if not self._defer_installation_icons:
+            self._apply_process_icons()
 
     def _icon_for_installation(self, installation: Installation) -> QIcon:
+        if self._defer_installation_icons:
+            return self._fast_installation_icon()
+
         exe_path = self.launcher_service.resolve_executable_path(installation)
         icon_size = self.installation_list.iconSize() if hasattr(self, "installation_list") else QSize(48, 48)
         base_icon = QIcon()
@@ -867,6 +886,9 @@ class MainWindow(QMainWindow):
         if self._is_installation_running(installation):
             return self._with_running_badge(base_icon, icon_size)
         return base_icon
+
+    def _fast_installation_icon(self) -> QIcon:
+        return self.style().standardIcon(self.style().StandardPixmap.SP_ComputerIcon)
 
     def _current_installation(self) -> Installation | None:
         row = self.installation_list.currentRow()
@@ -1525,16 +1547,42 @@ class MainWindow(QMainWindow):
         self._apply_process_icons()
 
     def _apply_process_icons(self) -> None:
-        for row, installation in enumerate(self.config.installations):
-            item = self.installation_list.item(row)
-            if item is None:
-                continue
-            item.setIcon(self._icon_for_installation(installation))
-            tooltip = installation.exe_path
-            process_count = len(self._process_ids_for_installation(installation))
-            if process_count:
-                tooltip = f"{tooltip}\n{self.tr('running_suffix', count=process_count)}"
-            item.setToolTip(tooltip)
+        self._queue_installation_icon_refresh()
+
+    def _queue_installation_icon_refresh(self, rows: list[int] | None = None) -> None:
+        if self._defer_installation_icons:
+            return
+
+        requested_rows = rows if rows is not None else list(range(len(self.config.installations)))
+        queued_rows = set(self._pending_icon_refresh_rows)
+        for row in requested_rows:
+            if 0 <= row < len(self.config.installations) and row not in queued_rows:
+                self._pending_icon_refresh_rows.append(row)
+                queued_rows.add(row)
+
+        if self._pending_icon_refresh_rows and not self.icon_refresh_timer.isActive():
+            self.icon_refresh_timer.start()
+
+    def _refresh_next_installation_icon(self) -> None:
+        if not self._pending_icon_refresh_rows:
+            self.icon_refresh_timer.stop()
+            return
+
+        row = self._pending_icon_refresh_rows.pop(0)
+        if row >= len(self.config.installations):
+            return
+
+        item = self.installation_list.item(row)
+        if item is None:
+            return
+
+        installation = self.config.installations[row]
+        item.setIcon(self._icon_for_installation(installation))
+        tooltip = installation.exe_path
+        process_count = len(self._process_ids_for_installation(installation))
+        if process_count:
+            tooltip = f"{tooltip}\n{self.tr('running_suffix', count=process_count)}"
+        item.setToolTip(tooltip)
 
     def _process_ids_for_installation(self, installation: Installation) -> list[int]:
         return self._running_processes.get(installation.id, [])
@@ -1559,22 +1607,22 @@ class MainWindow(QMainWindow):
 
     def _apply_installation_list_layout_mode(self) -> None:
         if self._use_tile_layout():
-            self.installation_list.setIconSize(QSize(158, 224))
-            self.installation_list.setGridSize(QSize(188, 280))
-            self.installation_list.setSpacing(16)
+            self.installation_list.setIconSize(QSize(140, 198))
+            self.installation_list.setGridSize(QSize(166, 246))
+            self.installation_list.setSpacing(10)
             return
         self.installation_list.setIconSize(QSize(48, 48))
-        self.installation_list.setGridSize(QSize(190, 140))
-        self.installation_list.setSpacing(12)
+        self.installation_list.setGridSize(QSize(168, 118))
+        self.installation_list.setSpacing(8)
 
     def _installation_item_size_hint(self, installation: Installation) -> QSize:
         if self._use_cover_tiles():
-            return QSize(188, 280)
+            return QSize(166, 246)
         if self._should_show_lutris_tile(installation):
-            return QSize(188, 280)
+            return QSize(166, 246)
         if self._use_lutris_tiles():
-            return QSize(188, 180)
-        return QSize(190, 140)
+            return QSize(166, 160)
+        return QSize(168, 118)
 
     def _prepare_icon_pixmap(self, icon: QIcon, size: QSize | None = None) -> tuple[QSize, object]:
         target_size = size or QSize(48, 48)

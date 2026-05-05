@@ -54,5 +54,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=str(app_dir / "resources" / "icons" / "fl_atlas_launcher_icon_512.png"),
+    icon=str(app_dir / "resources" / "icons" / "fl_atlas_launcher_icon.ico"),
 )

@@ -265,10 +265,7 @@ QWidget#qt_scrollarea_viewport {{
 }}
 
 QWidget#launcherRoot {{
-  background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1,
-    stop: 0 {c.window},
-    stop: 0.48 {c.base},
-    stop: 1 #050912);
+  background: {c.window};
 }}
 
 QWidget {{
@@ -279,13 +276,13 @@ QWidget {{
 
 QLabel#headline {{
   color: {c.window_text};
-  font-size: 24pt;
-  font-weight: 800;
+  font-size: 15pt;
+  font-weight: 700;
 }}
 
 QLabel#subline {{
   color: {c.subline};
-  font-size: 10.5pt;
+  font-size: 9pt;
 }}
 
 QLabel#eyebrow {{
@@ -303,24 +300,22 @@ QLabel#fieldLabel {{
 }}
 
 QToolBar {{
-  background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 0,
-    stop: 0 {c.toolbar_bg},
-    stop: 1 {c.base});
+  background: {c.toolbar_bg};
   border: 0;
   border-bottom: 1px solid {c.border};
-  spacing: 7px;
-  padding: 9px 12px;
+  spacing: 5px;
+  padding: 6px 8px;
 }}
 
 QToolButton {{
-  background: rgba(17, 31, 52, 220);
+  background: {c.secondary_button};
   color: {c.secondary_button_text};
   border: 1px solid {c.border};
-  border-radius: 9px;
-  padding: 7px 9px;
-  min-height: 28px;
+  border-radius: 6px;
+  padding: 5px 8px;
+  min-height: 24px;
   font-size: 9.5pt;
-  font-weight: 700;
+  font-weight: 600;
 }}
 
 QToolButton:hover,
@@ -337,7 +332,7 @@ QPushButton:pressed {{
 QToolBar::separator {{
   background: {c.border};
   width: 1px;
-  margin: 8px 7px;
+  margin: 6px 5px;
 }}
 
 QListWidget,
@@ -350,8 +345,8 @@ QPlainTextEdit,
 QTextEdit {{
   background: {c.base};
   border: 1px solid {c.border};
-  border-radius: 8px;
-  padding: 8px;
+  border-radius: 6px;
+  padding: 6px;
   selection-background-color: {c.highlight};
   selection-color: {c.highlight_text};
 }}
@@ -370,37 +365,35 @@ QFrame#controlDeck,
 QFrame#cheatPanel {{
   background: rgba(14, 26, 46, 232);
   border: 1px solid {c.border};
-  border-radius: 12px;
+  border-radius: 8px;
 }}
 
 QFrame#controlDeck {{
-  background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 0,
-    stop: 0 {c.alternate_base},
-    stop: 1 {c.base});
-  border-color: {c.item_selected_border};
+  background: {c.alternate_base};
+  border-color: {c.border};
 }}
 
 QFrame#tradeFilterPanel,
 QFrame#tradeDetailsPanel {{
   background: rgba(14, 26, 46, 235);
   border: 1px solid {c.border};
-  border-radius: 12px;
+  border-radius: 8px;
 }}
 
 QTextBrowser#tradeDetails {{
   background: {c.base};
   border: 1px solid {c.border};
-  border-radius: 12px;
-  padding: 10px;
+  border-radius: 8px;
+  padding: 8px;
 }}
 
 QLabel#tradeSummary {{
   color: {c.text};
   background: {c.base};
   border: 1px solid {c.border};
-  border-radius: 10px;
-  padding: 12px;
-  font-size: 11pt;
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 10pt;
   line-height: 1.35;
 }}
 
@@ -426,9 +419,9 @@ QComboBox::down-arrow {{
 
 QListWidget::item {{
   border: 1px solid transparent;
-  border-radius: 10px;
-  padding: 12px;
-  margin: 5px;
+  border-radius: 7px;
+  padding: 8px;
+  margin: 3px;
 }}
 
 QListWidget::item:selected {{
@@ -443,14 +436,12 @@ QListWidget::item:hover {{
 }}
 
 QPushButton {{
-  background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-    stop: 0 {c.primary_button},
-    stop: 1 {c.highlight});
+  background: {c.primary_button};
   color: {c.primary_button_text};
   border: 1px solid {c.item_selected_border};
-  border-radius: 9px;
-  padding: 10px 14px;
-  font-weight: 800;
+  border-radius: 6px;
+  padding: 7px 11px;
+  font-weight: 700;
 }}
 
 QPushButton[variant="secondary"] {{
@@ -485,9 +476,9 @@ QCheckBox {{
 }}
 
 QCheckBox::indicator {{
-  width: 18px;
-  height: 18px;
-  border-radius: 5px;
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
   border: 1px solid {c.border};
   background: {c.base};
 }}
@@ -518,10 +509,10 @@ QSlider::sub-page:horizontal {{
 }}
 
 QSlider::handle:horizontal {{
-  width: 18px;
-  height: 18px;
-  margin: -7px 0;
-  border-radius: 9px;
+  width: 15px;
+  height: 15px;
+  margin: -6px 0;
+  border-radius: 7px;
   background: {c.link};
   border: 1px solid {c.highlight_text};
 }}
@@ -540,7 +531,7 @@ QProgressBar::chunk {{
 
 QTabWidget::pane {{
   border: 1px solid {c.border};
-  border-radius: 10px;
+  border-radius: 7px;
   top: -1px;
   background: {c.base};
 }}
@@ -552,8 +543,8 @@ QTabBar::tab {{
   border-bottom: 0;
   border-top-left-radius: 8px;
   border-top-right-radius: 8px;
-  padding: 10px 14px;
-  margin-right: 4px;
+  padding: 7px 11px;
+  margin-right: 3px;
 }}
 
 QTabBar::tab:selected {{
@@ -568,7 +559,7 @@ QHeaderView::section {{
   border: 0;
   border-right: 1px solid {c.border};
   border-bottom: 1px solid {c.border};
-  padding: 8px;
+  padding: 6px;
   font-weight: 700;
 }}
 
@@ -577,7 +568,7 @@ QTableView {{
 }}
 
 QTableView::item {{
-  padding: 6px;
+  padding: 4px;
   border: 0;
 }}
 
@@ -588,13 +579,13 @@ QTableView::item:selected {{
 
 QScrollBar:vertical {{
   background: {c.window};
-  width: 12px;
+  width: 10px;
   margin: 0;
 }}
 
 QScrollBar::handle:vertical {{
   background: {c.border};
-  border-radius: 6px;
+  border-radius: 5px;
   min-height: 28px;
 }}
 
