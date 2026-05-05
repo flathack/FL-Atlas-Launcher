@@ -8,10 +8,12 @@ app_dir = project_root / "app"
 
 datas = [
     (str(app_dir / "resources"), "app/resources"),
-    (str(project_root / "HELP.md"), "."),
-    (str(project_root / "HELP.en.md"), "."),
-    (str(project_root / "README.md"), "."),
 ]
+
+for doc_name in ("HELP.md", "HELP.en.md", "README.md"):
+    doc_path = project_root / doc_name
+    if doc_path.exists():
+        datas.append((str(doc_path), "."))
 
 hiddenimports = [
     "yaml",
