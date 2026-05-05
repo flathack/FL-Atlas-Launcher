@@ -9,6 +9,9 @@ dist-x64-lean/
 build/
 build-x64-lean/
 build-x64/
+build-arm64/
+dist-arm64/
+release/
 *.spec
 !FL-Atlas-Launcher.spec
 release-assets/
