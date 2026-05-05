@@ -2,7 +2,7 @@ param(
     [string]$Version = "",
     [string]$PreviousTag = "",
     [string]$Repo = "flathack/FL-Atlas-Launcher",
-    [string]$PythonExe = "",
+    [string[]]$Architectures = @("x64", "arm64"),
     [switch]$SkipBuild,
     [switch]$SkipUpload,
     [switch]$AllowDirty,
@@ -95,50 +95,84 @@ function Remove-GeneratedPath {
     }
 }
 
-function Resolve-PythonForVenv {
-    if ($PythonExe.Trim()) {
-        $candidate = (Resolve-Path $PythonExe).Path
-        if (-not (Test-Path -LiteralPath $candidate)) {
-            throw "Python not found: $candidate"
+function Normalize-Architectures {
+    $normalized = New-Object System.Collections.Generic.List[string]
+    foreach ($arch in $Architectures) {
+        $value = "$arch".Trim().ToLowerInvariant()
+        if ($value -notin @("x64", "arm64")) {
+            throw "Unsupported architecture: $arch. Use x64 or arm64."
         }
-        return @($candidate)
+        if (-not $normalized.Contains($value)) {
+            $normalized.Add($value)
+        }
     }
-    if (Test-Path -LiteralPath ".venv-x64\Scripts\python.exe") {
-        return @((Resolve-Path ".venv-x64\Scripts\python.exe").Path)
+    if ($normalized.Count -eq 0) {
+        throw "No architectures selected."
     }
-    if (Get-Command py -ErrorAction SilentlyContinue) {
-        return @("py", "-3")
+    return @($normalized)
+}
+
+function Resolve-PythonLauncher {
+    param([string]$Arch)
+    if ($Arch -eq "x64") {
+        if (Get-Command py -ErrorAction SilentlyContinue) {
+            return @("py", "-3.13")
+        }
+        if (Test-Path -LiteralPath ".venv-x64\Scripts\python.exe") {
+            return @((Resolve-Path ".venv-x64\Scripts\python.exe").Path)
+        }
+        if (Get-Command python -ErrorAction SilentlyContinue) {
+            return @("python")
+        }
     }
-    if (Get-Command python -ErrorAction SilentlyContinue) {
-        return @("python")
+    if ($Arch -eq "arm64") {
+        if (Get-Command py -ErrorAction SilentlyContinue) {
+            return @("py", "-3.13-arm64")
+        }
     }
-    throw "No Python found. Install Python or pass -PythonExe."
+    throw "No Python launcher found for $Arch."
 }
 
 function Invoke-PythonCommand {
-    param([string[]]$Args)
-    $launcher = Resolve-PythonForVenv
+    param(
+        [string]$Arch,
+        [string[]]$Args
+    )
+    $launcher = Resolve-PythonLauncher $Arch
     & $launcher[0] @($launcher | Select-Object -Skip 1) @Args
     if ($LASTEXITCODE -ne 0) {
-        throw "Python command failed: $($Args -join ' ')"
+        throw "Python command failed for ${Arch}: $($Args -join ' ')"
     }
 }
 
-function New-ReleaseVenv {
-    $venv = "build\venv-release-x64"
-    if (-not (Test-Path -LiteralPath (Join-Path $venv "Scripts\python.exe"))) {
-        Invoke-PythonCommand @("-m", "venv", $venv)
+function Resolve-BuildPython {
+    param([string]$Arch)
+    if ($Arch -eq "x64" -and (Test-Path -LiteralPath ".venv-x64\Scripts\python.exe")) {
+        return (Resolve-Path ".venv-x64\Scripts\python.exe").Path
     }
-    $py = (Resolve-Path (Join-Path $venv "Scripts\python.exe")).Path
-    & $py -m pip install --upgrade pip wheel | Out-Host
+    $launcher = Resolve-PythonLauncher $Arch
+    $path = (& $launcher[0] @($launcher | Select-Object -Skip 1) -c "import sys; print(sys.executable)").Trim()
+    if (-not $path -or -not (Test-Path -LiteralPath $path)) {
+        throw "Could not resolve Python executable for $Arch."
+    }
+    return (Resolve-Path $path).Path
+}
+
+function Ensure-BuildRequirements {
+    param(
+        [string]$Arch,
+        [string]$Python
+    )
+    Write-Step "Checking Python requirements for $Arch"
+    & $Python -c "import PyInstaller, PySide6, pefile"
+    if ($LASTEXITCODE -eq 0) {
+        return
+    }
+    Write-Host "Installing missing build requirements for $Arch..." -ForegroundColor Yellow
+    & $Python -m pip install --upgrade -r requirements.txt pyinstaller | Out-Host
     if ($LASTEXITCODE -ne 0) {
-        throw "pip bootstrap failed"
+        throw "release requirements install failed for $Arch"
     }
-    & $py -m pip install --upgrade -r requirements.txt pyinstaller | Out-Host
-    if ($LASTEXITCODE -ne 0) {
-        throw "release requirements install failed"
-    }
-    return $py
 }
 
 function Get-PythonPlatform {
@@ -147,38 +181,48 @@ function Get-PythonPlatform {
 }
 
 function Assert-PythonArchitecture {
-    param([string]$Python)
+    param(
+        [string]$Arch,
+        [string]$Python
+    )
     $platform = Get-PythonPlatform $Python
-    if ($platform -notlike "*amd64*" -and $platform -notlike "*x64*") {
+    if ($Arch -eq "x64" -and $platform -notlike "*amd64*") {
         throw "Windows x64 release requires win-amd64 Python, got: $platform"
+    }
+    if ($Arch -eq "arm64" -and $platform -notlike "*arm64*") {
+        throw "Windows arm64 release requires win-arm64 Python, got: $platform"
     }
 }
 
 function Invoke-ReleaseBuild {
-    param([string]$Python)
-    Write-Step "Building Windows x64"
-    Assert-PythonArchitecture $Python
+    param(
+        [string]$Arch,
+        [string]$Python
+    )
+    Write-Step "Building Windows $Arch"
+    Assert-PythonArchitecture $Arch $Python
 
-    Remove-GeneratedPath "dist-x64"
-    Remove-GeneratedPath "build-x64"
+    Remove-GeneratedPath "dist-$Arch"
+    Remove-GeneratedPath "build-$Arch"
 
-    & $Python -m PyInstaller --noconfirm --clean --distpath "dist-x64" --workpath "build-x64" "FL-Atlas-Launcher.spec"
+    & $Python -m PyInstaller --noconfirm --clean --distpath "dist-$Arch" --workpath "build-$Arch" "FL-Atlas-Launcher.spec"
     if ($LASTEXITCODE -ne 0) {
-        throw "PyInstaller build failed"
+        throw "PyInstaller build failed for $Arch"
     }
 }
 
 function Get-ReleaseExePath {
+    param([string]$Arch)
     $candidates = @(
-        "dist-x64\FL-Atlas-Launcher.exe",
-        "dist-x64\FL-Atlas-Launcher\FL-Atlas-Launcher.exe"
+        "dist-$Arch\FL-Atlas-Launcher.exe",
+        "dist-$Arch\FL-Atlas-Launcher\FL-Atlas-Launcher.exe"
     )
     foreach ($candidate in $candidates) {
         if (Test-Path -LiteralPath $candidate) {
             return (Resolve-Path $candidate).Path
         }
     }
-    throw "Could not find FL-Atlas-Launcher.exe in dist-x64."
+    throw "Could not find FL-Atlas-Launcher.exe in dist-$Arch."
 }
 
 function Get-PeMachine {
@@ -199,35 +243,39 @@ function Get-PeMachine {
 }
 
 function Assert-BuildArchitecture {
-    $exe = Get-ReleaseExePath
+    param([string]$Arch)
+    $exe = Get-ReleaseExePath $Arch
     $actual = Get-PeMachine $exe
-    $expected = 0x8664
+    $expected = if ($Arch -eq "x64") { 0x8664 } else { 0xAA64 }
     if ($actual -ne $expected) {
         throw "$exe has PE machine 0x$($actual.ToString('x')), expected 0x$($expected.ToString('x'))"
     }
 }
 
 function New-ReleaseZip {
-    param([string]$Tag)
-    Write-Step "Creating release ZIP"
+    param(
+        [string]$Arch,
+        [string]$Tag
+    )
+    Write-Step "Creating release ZIP for Windows $Arch"
     $releaseDir = "release\$Tag"
-    $stageDir = "release\$Tag\FL-Atlas-Launcher"
+    $stageDir = "release\$Tag\FL-Atlas-Launcher-$Arch"
     Remove-GeneratedPath $stageDir
     if (-not (Test-Path -LiteralPath $releaseDir)) {
         New-Item -ItemType Directory -Path $releaseDir | Out-Null
     }
     New-Item -ItemType Directory -Path $stageDir | Out-Null
 
-    Copy-Item -LiteralPath (Get-ReleaseExePath) -Destination (Join-Path $stageDir "FL-Atlas-Launcher.exe") -Force
+    Copy-Item -LiteralPath (Get-ReleaseExePath $Arch) -Destination (Join-Path $stageDir "FL-Atlas-Launcher.exe") -Force
     if (Test-Path -LiteralPath "README.md") {
         Copy-Item -LiteralPath "README.md" -Destination (Join-Path $stageDir "README.md") -Force
     }
 
-    $zipPath = Join-Path $releaseDir "FL-Atlas-Launcher-$Tag-windows-x64.zip"
+    $zipPath = Join-Path $releaseDir "FL-Atlas-Launcher-$Tag-windows-$Arch.zip"
     if (Test-Path -LiteralPath $zipPath) {
         Remove-Item -LiteralPath $zipPath -Force
     }
-    tar -a -cf $zipPath -C $releaseDir "FL-Atlas-Launcher"
+    tar -a -cf $zipPath -C $releaseDir "FL-Atlas-Launcher-$Arch"
     if ($LASTEXITCODE -ne 0) {
         throw "ZIP creation failed: $zipPath"
     }
@@ -262,7 +310,7 @@ function New-ReleaseNotes {
     $lines = New-Object System.Collections.Generic.List[string]
     $lines.Add("## FL Atlas Launcher $Tag")
     $lines.Add("")
-    $lines.Add("Windows x64 Build.")
+    $lines.Add("Windows x64 and arm64 Build.")
     $lines.Add("")
 
     $commitLines = Get-CommitLines $range
@@ -363,18 +411,27 @@ Write-Host "Repository: $repoRoot"
 Write-Host "GitHub repo: $Repo"
 Write-Host "Changelog range: $rangeLabel"
 
+$architecturesToBuild = Normalize-Architectures
+Write-Host "Architectures: $($architecturesToBuild -join ', ')"
+
 Assert-CleanWorktree
 Assert-ReleasePrerequisites $tag
 
 if (-not $SkipBuild) {
-    $py = New-ReleaseVenv
-    Invoke-ReleaseBuild $py
+    foreach ($arch in $architecturesToBuild) {
+        $py = Resolve-BuildPython $arch
+        Ensure-BuildRequirements $arch $py
+        Invoke-ReleaseBuild $arch $py
+    }
 } else {
     Write-Step "Skipping build by request"
 }
 
-Assert-BuildArchitecture
-$assets = New-ReleaseZip $tag
+$assets = @()
+foreach ($arch in $architecturesToBuild) {
+    Assert-BuildArchitecture $arch
+    $assets += New-ReleaseZip $arch $tag
+}
 $notes = New-ReleaseNotes $tag $prevTag
 
 if ($SkipUpload) {
