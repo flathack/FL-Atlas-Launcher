@@ -9,8 +9,8 @@ import subprocess
 import sys
 import threading
 
-from PySide6.QtCore import QEvent, QFileInfo, QObject, QSize, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QAction, QBrush, QColor, QDesktopServices, QFont, QFontMetrics, QIcon, QPainter, QPen, QRadialGradient
+from PySide6.QtCore import QEvent, QFileInfo, QObject, QPointF, QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QAction, QBrush, QColor, QDesktopServices, QFont, QFontMetrics, QIcon, QLinearGradient, QPainter, QPen, QPixmap, QPolygonF, QRadialGradient
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -122,12 +122,13 @@ class MainWindow(QMainWindow):
         )
 
         self.setWindowTitle(self.tr("app_title", version=self.app_version))
-        self.resize(860, 560)
+        self.resize(1260, 680)
         app_icon_path = resource_path("resources", "icons", "fl_atlas_launcher_icon.svg")
         if app_icon_path.exists():
             self.setWindowIcon(QIcon(str(app_icon_path)))
 
         self.installation_list = QListWidget()
+        self.installation_list.setObjectName("installationGrid")
         self.installation_list.setViewMode(QListWidget.ViewMode.IconMode)
         self.installation_list.setFlow(QListWidget.Flow.LeftToRight)
         self.installation_list.setWrapping(True)
@@ -143,7 +144,11 @@ class MainWindow(QMainWindow):
         self._apply_installation_list_layout_mode()
 
         self.mpid_combo = QComboBox()
+        self.mpid_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.mpid_combo.setMinimumContentsLength(18)
         self.resolution_combo = QComboBox()
+        self.resolution_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.resolution_combo.setMinimumContentsLength(10)
         self.mod_file_changes_checkbox = QCheckBox(self.tr("allow_mod_file_changes"))
         self.mod_file_changes_checkbox.setCursor(Qt.CursorShape.PointingHandCursor)
         self.mod_file_changes_checkbox.setToolTip(self.tr("allow_mod_file_changes_tooltip"))
@@ -152,8 +157,11 @@ class MainWindow(QMainWindow):
         self.hudshift_checkbox = QCheckBox(self.tr("hudshift"))
         self.hudshift_checkbox.setCursor(Qt.CursorShape.PointingHandCursor)
         self.hudshift_aspect_combo = QComboBox()
+        self.hudshift_aspect_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.hudshift_aspect_combo.setMinimumContentsLength(6)
         self.hudshift_service = HudShiftService(self._get_cheat_service())
         self.launch_button = QPushButton(self.tr("start"))
+        self.launch_button.setProperty("variant", "primary")
         self.launch_button.setMinimumHeight(40)
         self.sync_timer = QTimer(self)
         self.sync_timer.setInterval(self.SYNC_POLL_INTERVAL_MS)
@@ -186,10 +194,12 @@ class MainWindow(QMainWindow):
         self.sync_status_label = QLabel()
         self.sync_status_label.setMinimumWidth(56)
         self.help_button = QToolButton()
-        self.help_button.setText("?")
-        self.help_button.setToolTip(self.tr("help"))
+        self.help_button.setText(self.tr("toolbar_help"))
+        self.help_button.setIcon(self._toolbar_icon("help", "#a78bfa"))
+        self.help_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.help_button.setToolTip(self.tr("toolbar_help_tooltip"))
         self.help_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        self.help_button.setMinimumSize(QSize(30, 30))
+        self.help_button.setMinimumSize(QSize(88, 38))
         if self.show_cheat_features:
             self.cheater_mode_label = QLabel(self.tr("cheater_mode"))
             self.cheater_mode_switch = QCheckBox()
@@ -210,39 +220,37 @@ class MainWindow(QMainWindow):
 
         toolbar = QToolBar(self.tr("toolbar_main"))
         toolbar.setMovable(False)
-        toolbar.setIconSize(QSize(16, 16))
-        toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        toolbar.setIconSize(QSize(26, 26))
+        toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.addToolBar(toolbar)
 
-        settings_action = QAction(self.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon), self.tr("manage_installations"), self)
-        settings_action.setToolTip(self.tr("manage_installations"))
+        settings_action = QAction(self._toolbar_icon("settings", "#38bdf8"), self.tr("toolbar_installations"), self)
+        settings_action.setToolTip(self.tr("toolbar_installations_tooltip"))
         settings_action.triggered.connect(self._open_settings)
         toolbar.addAction(settings_action)
 
-        mpid_action = QAction(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton), self.tr("manage_mpids"), self)
-        mpid_action.setToolTip(self.tr("manage_mpids"))
+        mpid_action = QAction(self._toolbar_icon("mpid", "#22c55e"), self.tr("toolbar_mpids"), self)
+        mpid_action.setToolTip(self.tr("toolbar_mpids_tooltip"))
         mpid_action.triggered.connect(self._open_mpid_dialog)
         toolbar.addAction(mpid_action)
 
-        ship_info_icon_path = resource_path("resources", "icons", "fl_atlas_launcher_icon.svg")
-        ship_info_icon = QIcon(str(ship_info_icon_path)) if ship_info_icon_path.exists() else self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogInfoView)
-        self.ship_info_action = QAction(ship_info_icon, self.tr("ship_info_open"), self)
-        self.ship_info_action.setToolTip(self.tr("ship_info_open"))
+        self.ship_info_action = QAction(self._toolbar_icon("ship", "#60a5fa"), self.tr("toolbar_ships"), self)
+        self.ship_info_action.setToolTip(self.tr("toolbar_ships_tooltip"))
         self.ship_info_action.triggered.connect(self._open_ship_info_dialog)
         toolbar.addAction(self.ship_info_action)
 
-        self.universe_view_action = QAction(self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon), self.tr("universe_viewer_open"), self)
-        self.universe_view_action.setToolTip(self.tr("universe_viewer_open"))
+        self.universe_view_action = QAction(self._toolbar_icon("universe", "#f59e0b"), self.tr("toolbar_universe"), self)
+        self.universe_view_action.setToolTip(self.tr("toolbar_universe_tooltip"))
         self.universe_view_action.triggered.connect(self._open_universe_view_dialog)
         toolbar.addAction(self.universe_view_action)
 
-        self.trade_routes_action = QAction(self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogContentsView), self.tr("trade_routes_open"), self)
-        self.trade_routes_action.setToolTip(self.tr("trade_routes_open"))
+        self.trade_routes_action = QAction(self._toolbar_icon("trade", "#14b8a6"), self.tr("toolbar_trade"), self)
+        self.trade_routes_action.setToolTip(self.tr("toolbar_trade_tooltip"))
         self.trade_routes_action.triggered.connect(self._open_trade_routes_dialog)
         toolbar.addAction(self.trade_routes_action)
 
-        self.reputation_action = QAction(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton), self.tr("reputation_open"), self)
-        self.reputation_action.setToolTip(self.tr("reputation_open"))
+        self.reputation_action = QAction(self._toolbar_icon("reputation", "#f97316"), self.tr("toolbar_reputation"), self)
+        self.reputation_action.setToolTip(self.tr("toolbar_reputation_tooltip"))
         self.reputation_action.triggered.connect(self._open_reputation_dialog)
         toolbar.addAction(self.reputation_action)
         toolbar.addSeparator()
@@ -256,31 +264,74 @@ class MainWindow(QMainWindow):
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         toolbar.addWidget(spacer)
 
-        refresh_action = QAction(self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload), self.tr("refresh"), self)
-        refresh_action.setToolTip(self.tr("refresh"))
+        refresh_action = QAction(self._toolbar_icon("refresh", "#38bdf8"), self.tr("toolbar_refresh"), self)
+        refresh_action.setToolTip(self.tr("toolbar_refresh_tooltip"))
         refresh_action.triggered.connect(self._refresh_view)
         toolbar.addAction(refresh_action)
         toolbar.addWidget(self.help_button)
 
         root = QWidget()
+        root.setObjectName("launcherRoot")
         layout = QVBoxLayout(root)
-        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setContentsMargins(26, 24, 26, 24)
         layout.setSpacing(18)
 
-        action_row = QWidget()
-        action_layout = QHBoxLayout(action_row)
-        action_layout.setContentsMargins(0, 0, 0, 0)
-        action_layout.setSpacing(12)
-        action_layout.addWidget(QLabel(self.tr("multiplayer_id")))
-        action_layout.addWidget(self.mpid_combo, 2)
-        action_layout.addWidget(QLabel(self.tr("resolution")))
-        action_layout.addWidget(self.resolution_combo, 1)
-        action_layout.addWidget(self.mod_file_changes_checkbox)
-        action_layout.addWidget(self.font_scale_checkbox)
-        action_layout.addWidget(self.hudshift_checkbox)
-        action_layout.addWidget(self.hudshift_aspect_combo)
+        header = QWidget()
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(14)
+        logo_label = QLabel()
+        logo_label.setFixedSize(52, 52)
+        logo_path = resource_path("resources", "icons", "fl_atlas_launcher_icon_512.png")
+        if logo_path.exists():
+            pixmap = QPixmap(str(logo_path))
+            logo_label.setPixmap(
+                pixmap.scaled(
+                    logo_label.size(),
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            )
+        title_column = QWidget()
+        title_layout = QVBoxLayout(title_column)
+        title_layout.setContentsMargins(0, 0, 0, 0)
+        title_layout.setSpacing(2)
+        eyebrow_label = QLabel(self.tr("launcher_eyebrow"))
+        eyebrow_label.setObjectName("eyebrow")
+        headline_label = QLabel("FL Atlas Launcher")
+        headline_label.setObjectName("headline")
+        subline_label = QLabel(self.tr("launcher_subline"))
+        subline_label.setObjectName("subline")
+        subline_label.setWordWrap(True)
+        title_layout.addWidget(eyebrow_label)
+        title_layout.addWidget(headline_label)
+        title_layout.addWidget(subline_label)
+        header_layout.addWidget(logo_label)
+        header_layout.addWidget(title_column, 1)
+
+        action_row = QFrame()
+        action_row.setObjectName("controlDeck")
+        action_layout = QGridLayout(action_row)
+        action_layout.setContentsMargins(16, 14, 16, 14)
+        action_layout.setHorizontalSpacing(12)
+        action_layout.setVerticalSpacing(10)
+        mpid_label = QLabel(self.tr("multiplayer_id"))
+        mpid_label.setObjectName("fieldLabel")
+        resolution_label = QLabel(self.tr("resolution"))
+        resolution_label.setObjectName("fieldLabel")
+        action_layout.addWidget(mpid_label, 0, 0)
+        action_layout.addWidget(self.mpid_combo, 0, 1, 1, 3)
+        action_layout.addWidget(resolution_label, 0, 4)
+        action_layout.addWidget(self.resolution_combo, 0, 5)
+        action_layout.addWidget(self.mod_file_changes_checkbox, 1, 0, 1, 2)
+        action_layout.addWidget(self.font_scale_checkbox, 1, 2)
+        action_layout.addWidget(self.hudshift_checkbox, 1, 3)
+        action_layout.addWidget(self.hudshift_aspect_combo, 1, 4, 1, 2)
         self.launch_button.setMinimumWidth(180)
-        action_layout.addWidget(self.launch_button)
+        action_layout.addWidget(self.launch_button, 0, 6, 2, 1)
+        action_layout.setColumnStretch(1, 2)
+        action_layout.setColumnStretch(3, 1)
+        action_layout.setColumnStretch(5, 1)
 
         self.cheat_sync_progress = QProgressBar()
         self.cheat_sync_progress.setMinimum(0)
@@ -298,9 +349,10 @@ class MainWindow(QMainWindow):
             self.cheat_panel = self._build_cheat_panel()
             content_layout.addWidget(self.cheat_panel)
 
+        layout.addWidget(header)
+        layout.addWidget(action_row)
         layout.addWidget(self.cheat_sync_progress)
         layout.addWidget(content_row, 1)
-        layout.addWidget(action_row)
 
         self.setCentralWidget(root)
         self.setStatusBar(QStatusBar())
@@ -323,8 +375,75 @@ class MainWindow(QMainWindow):
         self.cheat_toast_label.hide()
         self._update_cheat_panel_visibility()
 
+    def _toolbar_icon(self, kind: str, accent: str) -> QIcon:
+        size = 36
+        pixmap = QPixmap(size, size)
+        pixmap.fill(QColor(0, 0, 0, 0))
+
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        gradient = QLinearGradient(0, 0, size, size)
+        gradient.setColorAt(0, QColor("#172945"))
+        gradient.setColorAt(1, QColor("#08111f"))
+        painter.setPen(QPen(QColor(accent), 1.4))
+        painter.setBrush(QBrush(gradient))
+        painter.drawRoundedRect(1, 1, size - 2, size - 2, 10, 10)
+
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(accent))
+        painter.drawRoundedRect(5, 5, 4, size - 10, 2, 2)
+
+        painter.setPen(QPen(QColor("#eff8ff"), 2.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        self._draw_toolbar_glyph(painter, kind)
+        painter.end()
+        return QIcon(pixmap)
+
+    def _draw_toolbar_glyph(self, painter: QPainter, kind: str) -> None:
+        if kind == "settings":
+            painter.drawLine(15, 13, 29, 13)
+            painter.drawLine(15, 22, 29, 22)
+            painter.drawEllipse(QPointF(20, 13), 2.5, 2.5)
+            painter.drawEllipse(QPointF(25, 22), 2.5, 2.5)
+        elif kind == "mpid":
+            painter.drawRoundedRect(13, 11, 18, 14, 3, 3)
+            painter.drawEllipse(QPointF(19, 17), 2.4, 2.4)
+            painter.drawLine(23, 16, 28, 16)
+            painter.drawLine(23, 20, 28, 20)
+        elif kind == "ship":
+            painter.drawPolygon(QPolygonF([QPointF(22, 9), QPointF(30, 28), QPointF(22, 24), QPointF(14, 28)]))
+            painter.drawLine(22, 11, 22, 24)
+        elif kind == "universe":
+            painter.drawEllipse(QPointF(22, 18), 3.0, 3.0)
+            painter.drawEllipse(QPointF(22, 18), 10.0, 6.0)
+            painter.drawLine(14, 25, 30, 11)
+        elif kind == "trade":
+            painter.drawLine(14, 15, 29, 15)
+            painter.drawLine(25, 11, 29, 15)
+            painter.drawLine(25, 19, 29, 15)
+            painter.drawLine(30, 22, 15, 22)
+            painter.drawLine(19, 18, 15, 22)
+            painter.drawLine(19, 26, 15, 22)
+        elif kind == "reputation":
+            star = QPolygonF([
+                QPointF(22, 9), QPointF(25, 16), QPointF(32, 16),
+                QPointF(27, 21), QPointF(29, 28), QPointF(22, 24),
+                QPointF(15, 28), QPointF(17, 21), QPointF(12, 16),
+                QPointF(19, 16),
+            ])
+            painter.drawPolygon(star)
+        elif kind == "refresh":
+            painter.drawArc(13, 10, 18, 18, 35 * 16, 270 * 16)
+            painter.drawLine(29, 12, 30, 19)
+            painter.drawLine(29, 12, 23, 13)
+        else:
+            font = QFont("Segoe UI", 17, QFont.Weight.Bold)
+            painter.setFont(font)
+            painter.drawText(12, 9, 20, 22, Qt.AlignmentFlag.AlignCenter, "?")
+
     def _build_cheat_panel(self) -> QWidget:
         panel = QFrame()
+        panel.setObjectName("cheatPanel")
         panel.setFrameShape(QFrame.Shape.StyledPanel)
         panel.setMinimumWidth(310)
         panel.setMaximumWidth(370)

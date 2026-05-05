@@ -10,11 +10,15 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFrame,
+    QGridLayout,
+    QHeaderView,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QProgressBar,
     QPushButton,
+    QSplitter,
     QSpinBox,
     QTabWidget,
     QTableWidget,
@@ -42,9 +46,47 @@ from app.ui.trade_route_round_trip_detail_dialog import TradeRouteRoundTripDetai
 from app.ui.universe_viewer_tab import UniverseViewerTab
 
 
-_MAX_TABLE_TEXT_LENGTH = 30
-_MAX_ROUND_TRIP_TEXT_LENGTH = 60
+_MAX_TABLE_TEXT_LENGTH = 48
+_MAX_ROUND_TRIP_TEXT_LENGTH = 96
 _SORT_ROLE = int(Qt.ItemDataRole.UserRole) + 1
+
+
+def _configure_route_table(table: QTableWidget) -> None:
+    table.setAlternatingRowColors(True)
+    table.setShowGrid(False)
+    table.setWordWrap(False)
+    table.verticalHeader().setVisible(False)
+    table.verticalHeader().setDefaultSectionSize(34)
+    table.horizontalHeader().setHighlightSections(False)
+    table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+    table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+    table.setHorizontalScrollMode(QTableWidget.ScrollMode.ScrollPerPixel)
+    table.setVerticalScrollMode(QTableWidget.ScrollMode.ScrollPerPixel)
+
+
+def _configure_details_browser(browser: QTextBrowser) -> None:
+    browser.setOpenExternalLinks(False)
+    browser.setReadOnly(True)
+    browser.setMinimumWidth(380)
+    browser.setObjectName("tradeDetails")
+
+
+def _set_preferred_widths(table: QTableWidget, widths: list[int]) -> None:
+    for column, width in enumerate(widths):
+        table.setColumnWidth(column, width)
+    table.horizontalHeader().setStretchLastSection(False)
+
+
+def _field_label(text: str) -> QLabel:
+    label = QLabel(text)
+    label.setObjectName("fieldLabel")
+    return label
+
+
+def _build_filter_panel() -> QFrame:
+    panel = QFrame()
+    panel.setObjectName("tradeFilterPanel")
+    return panel
 
 
 def _truncate_table_text(value: object, max_length: int = _MAX_TABLE_TEXT_LENGTH) -> str:
@@ -393,10 +435,11 @@ class _InnerSystemTab(QWidget, _LoadingMixin):
 
         self.ship_combo = QComboBox()
         self.ship_info_button = QToolButton()
-        self.ship_info_button.setText("🔍")
+        self.ship_info_button.setText("Info")
         self.ship_info_button.setToolTip(self.tr("ship_preview_button_tooltip"))
         self.return_trip_checkbox = QCheckBox(self.tr("trade_routes_include_return"))
         self.refresh_button = QPushButton(self.tr("refresh"))
+        self.refresh_button.setProperty("variant", "primary")
 
         self.table = QTableWidget(0, 14)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -418,17 +461,12 @@ class _InnerSystemTab(QWidget, _LoadingMixin):
             self.tr("trade_routes_column_time"),
             self.tr("trade_routes_column_ppm"),
         ])
-        self.table.horizontalHeader().setStretchLastSection(True)
+        _configure_route_table(self.table)
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText(self.tr("trade_routes_search"))
         self.search_input.setClearButtonEnabled(True)
         self.details_label = QTextBrowser()
-        self.details_label.setOpenExternalLinks(False)
-        self.details_label.setReadOnly(True)
-        self.details_label.setMinimumHeight(240)
-        self.details_label.setStyleSheet(
-            "QTextBrowser { background-color: #3c4f71; border: 1px solid #4a5f82; border-radius: 10px; padding: 8px; }"
-        )
+        _configure_details_browser(self.details_label)
 
         self._init_loading_widgets(translator)
         self._started = False
@@ -453,24 +491,38 @@ class _InnerSystemTab(QWidget, _LoadingMixin):
         ship_layout.addWidget(self.ship_combo, 1)
         ship_layout.addWidget(self.ship_info_button)
 
-        controls = QHBoxLayout()
-        controls.addWidget(QLabel(self.tr("trade_routes_ship")))
-        controls.addWidget(ship_row, 2)
-        controls.addWidget(self.return_trip_checkbox)
-        controls.addWidget(QLabel(self.tr("trade_routes_search")))
-        controls.addWidget(self.search_input, 2)
-        controls.addWidget(self.refresh_button)
+        controls_panel = _build_filter_panel()
+        controls = QGridLayout(controls_panel)
+        controls.setContentsMargins(14, 12, 14, 12)
+        controls.setHorizontalSpacing(10)
+        controls.setVerticalSpacing(8)
+        controls.addWidget(_field_label(self.tr("trade_routes_ship")), 0, 0)
+        controls.addWidget(ship_row, 0, 1, 1, 2)
+        controls.addWidget(_field_label(self.tr("trade_routes_search")), 0, 3)
+        controls.addWidget(self.search_input, 0, 4, 1, 2)
+        controls.addWidget(self.return_trip_checkbox, 1, 1, 1, 2)
+        controls.addWidget(self.refresh_button, 0, 6, 2, 1)
+        controls.setColumnStretch(1, 2)
+        controls.setColumnStretch(4, 2)
 
         loading_row = QHBoxLayout()
         loading_row.addWidget(self.progress_bar, 1)
         loading_row.addWidget(self.cancel_button)
 
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.addWidget(self.table)
+        splitter.addWidget(self.details_label)
+        splitter.setStretchFactor(0, 5)
+        splitter.setStretchFactor(1, 2)
+        splitter.setSizes([930, 430])
+
         root = QVBoxLayout(self)
-        root.addLayout(controls)
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(10)
+        root.addWidget(controls_panel)
         root.addWidget(self.loading_label)
         root.addLayout(loading_row)
-        root.addWidget(self.table, 1)
-        root.addWidget(self.details_label)
+        root.addWidget(splitter, 1)
 
     def _connect_signals(self) -> None:
         self.refresh_button.clicked.connect(self._refresh_routes)
@@ -623,6 +675,7 @@ class _InnerSystemTab(QWidget, _LoadingMixin):
                 item.setData(_SORT_ROLE, sort_value)
                 self.table.setItem(row_index, offset, item)
         self.table.resizeColumnsToContents()
+        _set_preferred_widths(self.table, [52, 120, 170, 170, 170, 96, 96, 74, 80, 64, 104, 112, 82, 100])
         self.table.setSortingEnabled(True)
         self.table.sortByColumn(13, Qt.SortOrder.DescendingOrder)
         self._set_loading(False)
@@ -713,13 +766,14 @@ class _TradeRoutesTab(QWidget, _LoadingMixin):
 
         self.ship_combo = QComboBox()
         self.ship_info_button = QToolButton()
-        self.ship_info_button.setText("🔍")
+        self.ship_info_button.setText("Info")
         self.ship_info_button.setToolTip(self.tr("ship_preview_button_tooltip"))
         self.jump_spin = QSpinBox()
         self.jump_spin.setRange(0, 20)
         self.jump_spin.setValue(3)
         self.return_trip_checkbox = QCheckBox(self.tr("trade_routes_include_return"))
         self.refresh_button = QPushButton(self.tr("refresh"))
+        self.refresh_button.setProperty("variant", "primary")
 
         self.table = QTableWidget(0, 14)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -741,17 +795,12 @@ class _TradeRoutesTab(QWidget, _LoadingMixin):
             self.tr("trade_routes_column_time"),
             self.tr("trade_routes_column_ppm"),
         ])
-        self.table.horizontalHeader().setStretchLastSection(True)
+        _configure_route_table(self.table)
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText(self.tr("trade_routes_search"))
         self.search_input.setClearButtonEnabled(True)
         self.path_label = QTextBrowser()
-        self.path_label.setOpenExternalLinks(False)
-        self.path_label.setReadOnly(True)
-        self.path_label.setMinimumHeight(240)
-        self.path_label.setStyleSheet(
-            "QTextBrowser { background-color: #3c4f71; border: 1px solid #4a5f82; border-radius: 10px; padding: 8px; }"
-        )
+        _configure_details_browser(self.path_label)
 
         self._init_loading_widgets(translator)
         self._started = False
@@ -776,26 +825,40 @@ class _TradeRoutesTab(QWidget, _LoadingMixin):
         ship_layout.addWidget(self.ship_combo, 1)
         ship_layout.addWidget(self.ship_info_button)
 
-        controls = QHBoxLayout()
-        controls.addWidget(QLabel(self.tr("trade_routes_ship")))
-        controls.addWidget(ship_row, 2)
-        controls.addWidget(QLabel(self.tr("trade_routes_max_jumps")))
-        controls.addWidget(self.jump_spin)
-        controls.addWidget(self.return_trip_checkbox)
-        controls.addWidget(QLabel(self.tr("trade_routes_search")))
-        controls.addWidget(self.search_input, 2)
-        controls.addWidget(self.refresh_button)
+        controls_panel = _build_filter_panel()
+        controls = QGridLayout(controls_panel)
+        controls.setContentsMargins(14, 12, 14, 12)
+        controls.setHorizontalSpacing(10)
+        controls.setVerticalSpacing(8)
+        controls.addWidget(_field_label(self.tr("trade_routes_ship")), 0, 0)
+        controls.addWidget(ship_row, 0, 1, 1, 2)
+        controls.addWidget(_field_label(self.tr("trade_routes_max_jumps")), 0, 3)
+        controls.addWidget(self.jump_spin, 0, 4)
+        controls.addWidget(_field_label(self.tr("trade_routes_search")), 0, 5)
+        controls.addWidget(self.search_input, 0, 6, 1, 2)
+        controls.addWidget(self.return_trip_checkbox, 1, 1, 1, 3)
+        controls.addWidget(self.refresh_button, 0, 8, 2, 1)
+        controls.setColumnStretch(1, 2)
+        controls.setColumnStretch(6, 2)
 
         loading_row = QHBoxLayout()
         loading_row.addWidget(self.progress_bar, 1)
         loading_row.addWidget(self.cancel_button)
 
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.addWidget(self.table)
+        splitter.addWidget(self.path_label)
+        splitter.setStretchFactor(0, 5)
+        splitter.setStretchFactor(1, 2)
+        splitter.setSizes([930, 430])
+
         root = QVBoxLayout(self)
-        root.addLayout(controls)
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(10)
+        root.addWidget(controls_panel)
         root.addWidget(self.loading_label)
         root.addLayout(loading_row)
-        root.addWidget(self.table, 1)
-        root.addWidget(self.path_label)
+        root.addWidget(splitter, 1)
 
     def _connect_signals(self) -> None:
         self.refresh_button.clicked.connect(self._refresh_routes)
@@ -951,6 +1014,7 @@ class _TradeRoutesTab(QWidget, _LoadingMixin):
                 item.setData(_SORT_ROLE, sort_value)
                 self.table.setItem(row_index, offset, item)
         self.table.resizeColumnsToContents()
+        _set_preferred_widths(self.table, [52, 120, 170, 190, 170, 96, 96, 74, 80, 64, 104, 112, 82, 100])
         self.table.setSortingEnabled(True)
         self.table.sortByColumn(13, Qt.SortOrder.DescendingOrder)
         self._set_loading(False)
@@ -1041,7 +1105,7 @@ class _RoundTripTab(QWidget, _LoadingMixin):
 
         self.ship_combo = QComboBox()
         self.ship_info_button = QToolButton()
-        self.ship_info_button.setText("🔍")
+        self.ship_info_button.setText("Info")
         self.ship_info_button.setToolTip(self.tr("ship_preview_button_tooltip"))
         self.jump_spin = QSpinBox()
         self.jump_spin.setRange(0, 20)
@@ -1050,6 +1114,9 @@ class _RoundTripTab(QWidget, _LoadingMixin):
         self.leg_spin.setRange(3, 6)
         self.leg_spin.setValue(4)
         self.refresh_button = QPushButton(self.tr("refresh"))
+        self.refresh_button.setProperty("variant", "primary")
+        self.detail_button = QPushButton(self.tr("trade_round_trip_open_detail"))
+        self.detail_button.setProperty("variant", "secondary")
 
         self.table = QTableWidget(0, 7)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -1064,13 +1131,15 @@ class _RoundTripTab(QWidget, _LoadingMixin):
             self.tr("trade_round_trip_column_time"),
             self.tr("trade_round_trip_column_ppm"),
         ])
-        self.table.horizontalHeader().setStretchLastSection(True)
+        _configure_route_table(self.table)
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText(self.tr("trade_routes_search"))
         self.search_input.setClearButtonEnabled(True)
         self.summary_label = QLabel()
+        self.summary_label.setObjectName("tradeSummary")
         self.summary_label.setWordWrap(True)
         self.hint_label = QLabel(self.tr("trade_round_trip_detail_hint"))
+        self.hint_label.setObjectName("subline")
         self.hint_label.setWordWrap(True)
 
         self._init_loading_widgets(translator)
@@ -1096,28 +1165,55 @@ class _RoundTripTab(QWidget, _LoadingMixin):
         ship_layout.addWidget(self.ship_combo, 1)
         ship_layout.addWidget(self.ship_info_button)
 
-        controls = QHBoxLayout()
-        controls.addWidget(QLabel(self.tr("trade_routes_ship")))
-        controls.addWidget(ship_row, 2)
-        controls.addWidget(QLabel(self.tr("trade_routes_max_jumps")))
-        controls.addWidget(self.jump_spin)
-        controls.addWidget(QLabel(self.tr("trade_round_trip_leg_count")))
-        controls.addWidget(self.leg_spin)
-        controls.addWidget(QLabel(self.tr("trade_routes_search")))
-        controls.addWidget(self.search_input, 2)
-        controls.addWidget(self.refresh_button)
+        controls_panel = _build_filter_panel()
+        controls = QGridLayout(controls_panel)
+        controls.setContentsMargins(14, 12, 14, 12)
+        controls.setHorizontalSpacing(10)
+        controls.setVerticalSpacing(8)
+        controls.addWidget(_field_label(self.tr("trade_routes_ship")), 0, 0)
+        controls.addWidget(ship_row, 0, 1, 1, 2)
+        controls.addWidget(_field_label(self.tr("trade_routes_max_jumps")), 0, 3)
+        controls.addWidget(self.jump_spin, 0, 4)
+        controls.addWidget(_field_label(self.tr("trade_round_trip_leg_count")), 0, 5)
+        controls.addWidget(self.leg_spin, 0, 6)
+        controls.addWidget(_field_label(self.tr("trade_routes_search")), 1, 0)
+        controls.addWidget(self.search_input, 1, 1, 1, 6)
+        controls.addWidget(self.refresh_button, 0, 7, 2, 1)
+        controls.setColumnStretch(1, 2)
+        controls.setColumnStretch(2, 1)
 
         loading_row = QHBoxLayout()
         loading_row.addWidget(self.progress_bar, 1)
         loading_row.addWidget(self.cancel_button)
 
+        summary_panel = QFrame()
+        summary_panel.setObjectName("tradeDetailsPanel")
+        summary_panel.setMinimumWidth(340)
+        summary_layout = QVBoxLayout(summary_panel)
+        summary_layout.setContentsMargins(16, 16, 16, 16)
+        summary_layout.setSpacing(12)
+        summary_title = QLabel(self.tr("trade_round_trip_summary_title"))
+        summary_title.setObjectName("eyebrow")
+        summary_layout.addWidget(summary_title)
+        summary_layout.addWidget(self.summary_label)
+        summary_layout.addWidget(self.hint_label)
+        summary_layout.addWidget(self.detail_button)
+        summary_layout.addStretch(1)
+
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.addWidget(self.table)
+        splitter.addWidget(summary_panel)
+        splitter.setStretchFactor(0, 5)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([980, 360])
+
         root = QVBoxLayout(self)
-        root.addLayout(controls)
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(10)
+        root.addWidget(controls_panel)
         root.addWidget(self.loading_label)
         root.addLayout(loading_row)
-        root.addWidget(self.table, 1)
-        root.addWidget(self.summary_label)
-        root.addWidget(self.hint_label)
+        root.addWidget(splitter, 1)
 
     def _connect_signals(self) -> None:
         self.refresh_button.clicked.connect(self._refresh_loops)
@@ -1127,6 +1223,7 @@ class _RoundTripTab(QWidget, _LoadingMixin):
         self.leg_spin.valueChanged.connect(lambda _: self._refresh_loops())
         self.table.currentCellChanged.connect(self._update_summary)
         self.table.itemDoubleClicked.connect(lambda _: self._open_detail_dialog())
+        self.detail_button.clicked.connect(self._open_detail_dialog)
         self.search_input.textChanged.connect(self._apply_filter)
 
     def _load_ships(self) -> None:
@@ -1258,6 +1355,7 @@ class _RoundTripTab(QWidget, _LoadingMixin):
                 item.setData(_SORT_ROLE, sort_value)
                 self.table.setItem(row_index, column, item)
         self.table.resizeColumnsToContents()
+        _set_preferred_widths(self.table, [130, 330, 260, 70, 120, 90, 110])
         self.table.setSortingEnabled(True)
         self.table.sortByColumn(6, Qt.SortOrder.DescendingOrder)
         self._set_loading(False)
@@ -1354,7 +1452,7 @@ class TradeRouteTabbedDialog(QDialog):
         super().__init__(parent)
         self.translator = translator
         self.setWindowTitle(translator.text("trade_routes_title", name=installation.name))
-        self.resize(1280, 740)
+        self.resize(1440, 860)
         self.setModal(False)
 
         reputation = dict(player_reputation or {})
@@ -1392,6 +1490,20 @@ class TradeRouteTabbedDialog(QDialog):
         self.button_box.rejected.connect(self.close)
 
         root = QVBoxLayout(self)
+        root.setContentsMargins(18, 16, 18, 14)
+        root.setSpacing(12)
+        header = QWidget()
+        header_layout = QVBoxLayout(header)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(2)
+        title_label = QLabel(translator.text("trade_routes_dialog_heading"))
+        title_label.setObjectName("headline")
+        subtitle_label = QLabel(translator.text("trade_routes_dialog_subline", name=installation.name))
+        subtitle_label.setObjectName("subline")
+        subtitle_label.setWordWrap(True)
+        header_layout.addWidget(title_label)
+        header_layout.addWidget(subtitle_label)
+        root.addWidget(header)
         root.addWidget(self.tabs, 1)
         root.addWidget(self.button_box)
 
