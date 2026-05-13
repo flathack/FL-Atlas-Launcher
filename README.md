@@ -67,4 +67,4 @@ Wenn was komisch aussieht: wahrscheinlich UI Baustelle oder irgendein Path-Mappi
 
 ## License
 
-Private project. All rights reserved.
+MIT License. See [LICENSE](LICENSE).
