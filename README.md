@@ -54,37 +54,6 @@ graph TD
     Core --> Pathfinder
 ```
 
----
-
-## 🛠️ Entwicklung & Installation
-
-### Voraussetzungen
-1. **Node.js**: v18+ und `npm`
-2. **Rust**: Rustup und Cargo Compiler-Toolchain
-3. **Tauri CLI**: `npm install -g @tauri-apps/cli` oder lokal ausführbar
-
-### Repository einrichten & starten
-```bash
-# 1. Repository klonen (oder initialisieren)
-git init
-
-# 2. Node-Abhängigkeiten installieren
-npm install
-
-# 3. Entwickler-Modus starten (Frontend + Tauri-Fenster)
-npm run tauri dev
-```
-
-### Production Build kompilieren
-Um ein installationsbereites, optimiertes Standalone-Paket (MSI/NSIS Installer für Windows, AppImage/Deb für Linux) zu generieren:
-```bash
-npm run tauri build
-```
-Die fertigen Installationspakete und die kompilierte Binärdatei befinden sich anschließend in:
-- Windows: `src-tauri/target/release/bundle/`
-
----
-
 ## 📝 Rechtliche Hinweise (Legal Disclaimers)
 
 > [!IMPORTANT]
