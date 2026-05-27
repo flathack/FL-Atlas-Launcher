@@ -1,6 +1,6 @@
 # 🌌 FL Atlas Launcher V2
 
-[![Version](https://img.shields.io/badge/version-v0.8.3%20%5BALPHA%5D-cyan?style=for-the-badge)](https://github.com/flathack/FL-Atlas-Launcher/releases/latest)
+[![Version](https://img.shields.io/badge/version-v0.8.4%20%5BALPHA%5D-cyan?style=for-the-badge)](https://github.com/flathack/FL-Atlas-Launcher/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%28Wine%29-5865F2?style=for-the-badge)](#)
 [![Tech Stack](https://img.shields.io/badge/tech--stack-Tauri%20v2%20%7C%20Rust%20%7C%20Svelte%205-00F2FE?style=for-the-badge)](#)
 
