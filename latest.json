@@ -6,8 +6,8 @@
                    "windows_x64":  {
                                        "name":  "fl-atlas-launcher-v0.8.6-win-x64.zip",
                                        "url":  "https://github.com/flathack/FL-Atlas-Launcher/releases/download/v0.8.6/fl-atlas-launcher-v0.8.6-win-x64.zip",
-                                       "sha256":  "24b10877a555f02523a8aa7344a95414dbc8536a99fe84157d90f3418e14fa1e",
-                                       "size":  4191574
+                                       "sha256":  "927c17f2787b9dc0fab9b2df0acd7c7e3e8e3f44263954ed1ed4025f1853d15f",
+                                       "size":  4191326
                                    }
                }
 }
