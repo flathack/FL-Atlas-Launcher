@@ -3,9 +3,13 @@
 [![Version](https://img.shields.io/badge/version-v0.8.6%20%5BALPHA%5D-cyan?style=for-the-badge)](https://github.com/flathack/FL-Atlas-Launcher/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%28Wine%29-5865F2?style=for-the-badge)](#)
 
+[Deutsch lesen](README.de.md)
+
 FL Atlas Launcher V2 is a modern launcher for Freelancer players who manage multiple installations, multiplayer identities, mods, and universe data from one place.
 
 The launcher focuses on a smooth sci-fi cockpit experience, safe MPID handling, fast game startup, and useful map and trade tools for everyday play.
+
+![FL Atlas Launcher cockpit](assets/launcher_v086_screenshot.jpg)
 
 ## Download
 
