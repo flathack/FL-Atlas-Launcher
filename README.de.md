@@ -3,7 +3,7 @@
 [![Version](https://img.shields.io/badge/version-v0.8.6%20%5BALPHA%5D-cyan?style=for-the-badge)](https://github.com/flathack/FL-Atlas-Launcher/releases/latest)
 [![Plattform](https://img.shields.io/badge/Plattform-Windows%20%7C%20Linux%20%28Wine%29-5865F2?style=for-the-badge)](#)
 
-[Read in English](README.md)
+[Read in English](README.md) | [Читать по-русски](README.ru.md)
 
 FL Atlas Launcher V2 ist ein moderner Launcher fuer Freelancer-Spieler, die mehrere Installationen, Multiplayer-Identitaeten, Mods und Universumsdaten an einem Ort verwalten wollen.
 
