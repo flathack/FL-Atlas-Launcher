@@ -1,13 +1,13 @@
 {
-    "version":  "0.8.7",
-    "tag":  "v0.8.7",
-    "release_url":  "https://github.com/flathack/FL-Atlas-Launcher/releases/tag/v0.8.7",
+    "version":  "0.8.8",
+    "tag":  "v0.8.8",
+    "release_url":  "https://github.com/flathack/FL-Atlas-Launcher/releases/tag/v0.8.8",
     "assets":  {
                    "windows_x64":  {
-                                       "name":  "fl-atlas-launcher-v0.8.7-win-x64.zip",
-                                       "url":  "https://github.com/flathack/FL-Atlas-Launcher/releases/download/v0.8.7/fl-atlas-launcher-v0.8.7-win-x64.zip",
-                                       "sha256":  "f534ea8105489cf587228ed7fe84260b9dd4a25fa757d689d4f426013a37976d",
-                                       "size":  4357398
+                                       "name":  "fl-atlas-launcher-v0.8.8-win-x64.zip",
+                                       "url":  "https://github.com/flathack/FL-Atlas-Launcher/releases/download/v0.8.8/fl-atlas-launcher-v0.8.8-win-x64.zip",
+                                       "sha256":  "a8f8141c176c1a8bbd42afea817c5822696d4731764165fd699597be82d30e00",
+                                       "size":  4359744
                                    }
                }
 }
