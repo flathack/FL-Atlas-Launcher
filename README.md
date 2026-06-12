@@ -1,6 +1,6 @@
 # FL Atlas Launcher V2
 
-[![Version](https://img.shields.io/badge/version-v0.8.8%20%5BALPHA%5D-cyan?style=for-the-badge)](https://github.com/flathack/FL-Atlas-Launcher/releases/latest)
+[![Version](https://img.shields.io/badge/version-v0.9.0%20%5BBETA%5D-cyan?style=for-the-badge)](https://github.com/flathack/FL-Atlas-Launcher/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%28Wine%29-5865F2?style=for-the-badge)](#)
 
 [Deutsch lesen](README.de.md) | [Читать по-русски](README.ru.md)
@@ -27,7 +27,7 @@ Get the latest Windows package from the [GitHub Releases page](https://github.co
 
 ## Status
 
-FL Atlas Launcher V2 is currently an alpha release. Expect active changes while features are polished and tested across different Freelancer mods and installations.
+FL Atlas Launcher V2 is currently a beta release. Expect active changes while features are polished and tested across different Freelancer mods and installations.
 
 ## Legal
 
