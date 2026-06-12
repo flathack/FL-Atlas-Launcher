@@ -5,9 +5,9 @@
 
 [Read in English](README.md) | [Читать по-русски](README.ru.md)
 
-FL Atlas Launcher V2 ist ein moderner Launcher fuer Freelancer-Spieler, die mehrere Installationen, Multiplayer-Identitaeten, Mods und Universumsdaten an einem Ort verwalten wollen.
+FL Atlas Launcher V2 ist ein moderner Launcher für Freelancer-Spieler, die mehrere Installationen, Multiplayer-Identitäten, Mods und Universumsdaten an einem Ort verwalten wollen.
 
-Der Launcher setzt auf ein schnelles Sci-Fi-Cockpit-Gefuehl, sicheres MPID-Handling, direkten Spielstart und praktische Karten- und Handelswerkzeuge fuer den Alltag.
+Der Launcher setzt auf ein schnelles Sci-Fi-Cockpit-Gefühl, sicheres MPID-Handling, direkten Spielstart und praktische Karten- und Handelswerkzeuge für den Alltag.
 
 ![FL Atlas Launcher Cockpit](assets/launcher_v086_screenshot.jpg)
 
@@ -18,19 +18,19 @@ Das aktuelle Windows-Paket gibt es auf der [GitHub-Releases-Seite](https://githu
 ## Hauptfunktionen
 
 - Mehrere Freelancer-Installationen in einem Launcher verwalten.
-- Multiplayer-Identitaeten speichern, wechseln und schuetzen.
-- Unbekannte aktive Registry-IDs erkennen, bevor sie ueberschrieben werden koennen.
-- Haefige Freelancer-Fixes und Komfortanpassungen anwenden.
-- Systeme, Basen, Stationen, Sprungtore, Sprungloecher, Felder und Routen erkunden.
+- Multiplayer-Identitäten speichern, wechseln und schützen.
+- Unbekannte aktive Registry-IDs erkennen, bevor sie überschrieben werden können.
+- Häufige Freelancer-Fixes und Komfortanpassungen anwenden.
+- Systeme, Basen, Stationen, Sprungtore, Sprunglöcher, Felder und Routen erkunden.
 - Handelsrouten analysieren und Wege durch das Universum planen.
-- Launcher-Updates direkt in der App pruefen.
+- Launcher-Updates direkt in der App prüfen.
 
 ## Status
 
-FL Atlas Launcher V2 ist aktuell eine Alpha-Version. Es kann aktive Aenderungen geben, waehrend Funktionen poliert und mit verschiedenen Freelancer-Mods und Installationen getestet werden.
+FL Atlas Launcher V2 ist aktuell eine Alpha-Version. Es kann aktive Änderungen geben, während Funktionen poliert und mit verschiedenen Freelancer-Mods und Installationen getestet werden.
 
 ## Rechtliches
 
-Freelancer ist eine Marke der Microsoft Corporation. FL Atlas Launcher V2 ist ein unabhaengiges Fanprojekt und nicht mit Microsoft, Digital Anvil oder offiziellen Rechteinhabern verbunden.
+Freelancer ist eine Marke der Microsoft Corporation. FL Atlas Launcher V2 ist ein unabhängiges Fanprojekt und nicht mit Microsoft, Digital Anvil oder offiziellen Rechteinhabern verbunden.
 
-Die Nutzung erfolgt auf eigene Gefahr. Lege immer Backups wichtiger Spielordner und Multiplayer-Identitaeten an.
+Die Nutzung erfolgt auf eigene Gefahr. Lege immer Backups wichtiger Spielordner und Multiplayer-Identitäten an.
