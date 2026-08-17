@@ -1,6 +1,6 @@
 # FL Atlas Launcher V2
 
-[![Версия](https://img.shields.io/badge/version-v0.9.6%20%5BBETA%5D-cyan?style=for-the-badge)](https://github.com/flathack/FL-Atlas-Launcher/releases/latest)
+[![Версия](https://img.shields.io/badge/version-v1.0.0-cyan?style=for-the-badge)](https://github.com/flathack/FL-Atlas-Launcher/releases/latest)
 [![Платформа](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%28Wine%29-5865F2?style=for-the-badge)](#)
 
 [Read in English](README.md) | [Deutsch lesen](README.de.md)
@@ -27,8 +27,7 @@ FL Atlas Launcher V2 — современный лаунчер для игрок
 
 ## Статус
 
-FL Atlas Launcher V2 сейчас находится в beta-релизе. Возможны активные изменения, пока функции дорабатываются и тестируются с разными модами и установками Freelancer.
-
+FL Atlas Launcher V2 — стабильная версия. Новые функции продолжают тестироваться с различными модами и установками Freelancer.
 ## Правовая информация
 
 Freelancer является товарным знаком Microsoft Corporation. FL Atlas Launcher V2 — независимый фанатский проект, не связанный с Microsoft, Digital Anvil или официальными правообладателями.
