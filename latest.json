@@ -1,11 +1,11 @@
 {
     "schemaVersion":  1,
     "product":  "FL Atlas Launcher",
-    "version":  "1.0.0",
-    "tag":  "v1.0.0",
+    "version":  "1.0.1",
+    "tag":  "v1.0.1",
     "build":  {
-                  "commit":  "5632f0ac3ee1dea1e8aff3915d334ab85cacc1de",
-                  "sourceDateEpoch":  1786933115,
+                  "commit":  "10dbf71afbc3ace4ff1c3885143199760c0995d6",
+                  "sourceDateEpoch":  1787482298,
                   "releaseScope":  "windows-x64",
                   "node":  "v24.15.0",
                   "npm":  "11.12.1",
@@ -26,10 +26,10 @@
                        "platform":  "windows",
                        "arch":  "x64",
                        "role":  "updater",
-                       "fileName":  "fl-atlas-launcher-v1.0.0-win-x64.zip",
-                       "size":  6018417,
-                       "sha256":  "87464f9d2fd395a2c5d493f5986c44b0658636f87c01f10117b4684c668eacab",
-                       "checksumFile":  "fl-atlas-launcher-v1.0.0-win-x64.zip.sha256"
+                       "fileName":  "fl-atlas-launcher-v1.0.1-win-x64.zip",
+                       "size":  6013047,
+                       "sha256":  "5af115e58679a359618bb76e716d297e04201e3f3de1d7ee2283e78e0c9f1185",
+                       "checksumFile":  "fl-atlas-launcher-v1.0.1-win-x64.zip.sha256"
                    }
                ]
 }
