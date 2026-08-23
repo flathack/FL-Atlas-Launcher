@@ -1,6 +1,6 @@
 # FL Atlas Launcher V2
 
-[![Version](https://img.shields.io/badge/version-v1.0.1-cyan?style=for-the-badge)](https://github.com/flathack/FL-Atlas-Launcher/releases/latest)
+[![Version](https://img.shields.io/badge/version-v1.0.2-cyan?style=for-the-badge)](https://github.com/flathack/FL-Atlas-Launcher/releases/latest)
 [![Plattform](https://img.shields.io/badge/Plattform-Windows%20%7C%20Linux%20%28Wine%29-5865F2?style=for-the-badge)](#)
 
 [Read in English](README.md) | [Читать по-русски](README.ru.md)
